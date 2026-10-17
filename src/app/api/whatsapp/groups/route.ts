@@ -1,0 +1,239 @@
+import { NextResponse } from 'next/server';
+import { createClient } from '@/utils/supabase/server';
+
+const BRIDGE_URL = process.env.NEXT_PUBLIC_BRIDGE_URL || 'http://localhost:5001';
+
+export async function GET(request: Request) {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // 1. Fetch monitored groups from Supabase with user auth context
+    const { data: dbMonitored } = await supabase
+      .from('monitored_groups')
+      .select('*')
+      .eq('user_id', user.id);
+
+    const monitoredMap = new Map((dbMonitored || []).map((m: any) => [m.group_jid, m]));
+
+    // Proactively push monitored groups from DB to bridge session
+    if (dbMonitored && dbMonitored.length > 0) {
+      for (const dg of dbMonitored) {
+        fetch(`${BRIDGE_URL}/api/session/${user.id}/monitored-groups`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            groupJid: dg.group_jid,
+            groupName: dg.group_name,
+            keywords: dg.keywords || [],
+            isActive: dg.is_active !== false,
+          }),
+        }).catch(() => {});
+      }
+    }
+
+    // 2. Call bridge to fetch groups from active WhatsApp connection
+    let liveGroups: any[] = [];
+    let isLive = false;
+
+    try {
+      const res = await fetch(`${BRIDGE_URL}/api/session/${user.id}/groups`, {
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.groups) {
+          liveGroups = data.groups;
+          isLive = true;
+        }
+      }
+    } catch {
+      // Bridge connection fallback
+    }
+
+    // Merge live WhatsApp groups with database monitored groups
+    const seenJids = new Set<string>();
+    const combined: any[] = [];
+
+    // Add all live WhatsApp groups
+    for (const g of liveGroups) {
+      seenJids.add(g.id);
+      const isMonitored = monitoredMap.has(g.id);
+      combined.push({
+        id: g.id,
+        name: g.name,
+        isMonitored,
+        keywords: isMonitored ? monitoredMap.get(g.id)?.keywords || [] : g.keywords || [],
+      });
+    }
+
+    // Also include any monitored groups from DB that weren't returned by bridge yet
+    for (const m of dbMonitored || []) {
+      if (!seenJids.has(m.group_jid)) {
+        combined.push({
+          id: m.group_jid,
+          name: m.group_name,
+          isMonitored: true,
+          keywords: m.keywords || [],
+        });
+      }
+    }
+
+    return NextResponse.json({
+      groups: combined,
+      isLive,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to retrieve groups';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const { groupJid, groupName, keywords, isActive } = body;
+
+    if (!groupJid || !groupName) {
+      return NextResponse.json({ error: 'groupJid and groupName required' }, { status: 400 });
+    }
+
+    // Check user tier limits
+    const { cookies } = await import('next/headers');
+    const cookieStore = await cookies();
+    const cookieSub = cookieStore.get('cd_sub_active')?.value;
+    let cookieTier: string | null = null;
+    if (cookieSub) {
+      const [cUserId, cTier] = cookieSub.split(':');
+      if (cUserId === user.id) cookieTier = cTier;
+    }
+
+    const { data: userProfile } = await supabase
+      .from('users')
+      .select('subscription_tier')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    const tier = cookieTier || userProfile?.subscription_tier || user.user_metadata?.subscription_tier || 'base';
+    const limit = tier === 'max' ? 10 : tier === 'pro' ? 3 : 1;
+
+    // Check how many groups already monitored
+    const { count } = await supabase
+      .from('monitored_groups')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id);
+
+    // If adding a new group (not updating) and limit reached:
+    const { data: existing } = await supabase
+      .from('monitored_groups')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('group_jid', groupJid)
+      .maybeSingle();
+
+    if (!existing && (count || 0) >= limit) {
+      return NextResponse.json(
+        {
+          error: `Your current plan (${tier.toUpperCase()}) allows monitoring up to ${limit} group(s). Please upgrade your subscription to monitor more groups.`,
+        },
+        { status: 403 }
+      );
+    }
+
+    const { data, error } = await supabase
+      .from('monitored_groups')
+      .upsert(
+        {
+          user_id: user.id,
+          group_jid: groupJid,
+          group_name: groupName,
+          keywords: keywords || [],
+          is_active: isActive !== undefined ? isActive : true,
+        },
+        { onConflict: 'user_id, group_jid' }
+      )
+      .select()
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Proactively sync into bridge-service in-memory monitor
+    fetch(`${BRIDGE_URL}/api/session/${user.id}/monitored-groups`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        groupJid,
+        groupName,
+        keywords: keywords || [],
+        isActive: isActive !== undefined ? isActive : true,
+      }),
+    }).catch(() => {});
+
+    return NextResponse.json({ group: data });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Error updating group';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const groupJid = searchParams.get('groupJid');
+
+    if (!groupJid) {
+      return NextResponse.json({ error: 'groupJid is required' }, { status: 400 });
+    }
+
+    const { error } = await supabase
+      .from('monitored_groups')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('group_jid', groupJid);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Sync deletion into bridge-service in-memory monitor
+    fetch(`${BRIDGE_URL}/api/session/${user.id}/monitored-groups`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        groupJid,
+        isActive: false,
+      }),
+    }).catch(() => {});
+
+    return NextResponse.json({ success: true });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Error removing monitored group';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

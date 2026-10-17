@@ -1,0 +1,16 @@
+{
+  "name": "ChatDigest",
+  "short_name": "ChatDigest",
+  "description": "WhatsApp Group Summarization & Keyword Alerts SaaS",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#059669",
+  "icons": [
+    {
+      "src": "/favico.png",
+      "sizes": "any",
+      "type": "image/png"
+    }
+  ]
+}

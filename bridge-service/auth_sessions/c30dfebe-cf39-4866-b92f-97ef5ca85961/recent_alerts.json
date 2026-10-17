@@ -1,0 +1,47 @@
+[
+  {
+    "id": "alert_1",
+    "keyword": "giveaway",
+    "groupJid": "120363398128068681@g.us",
+    "groupName": "RNA",
+    "senderName": "You",
+    "messageContent": "giveaway",
+    "createdAt": "2026-10-17T20:17:11.596Z"
+  },
+  {
+    "id": "alert_2",
+    "keyword": "exams",
+    "groupJid": "120363398128068681@g.us",
+    "groupName": "RNA",
+    "senderName": "You",
+    "messageContent": "exams",
+    "createdAt": "2026-10-17T20:18:51.597Z"
+  },
+  {
+    "id": "alert_3",
+    "keyword": "exams",
+    "groupJid": "120363398128068681@g.us",
+    "groupName": "RNA",
+    "senderName": "You",
+    "messageContent": "who is gay here? and wants to write exam",
+    "createdAt": "2026-10-17T20:20:31.597Z"
+  },
+  {
+    "id": "alert_4",
+    "keyword": "exam",
+    "groupJid": "120363405672827662@g.us",
+    "groupName": "Gidswap >< Quidax",
+    "senderName": "gidswap",
+    "messageContent": "Exam",
+    "createdAt": "2026-10-17T20:22:11.597Z"
+  },
+  {
+    "id": "alert_5",
+    "keyword": "giveaway",
+    "groupJid": "120363398128068681@g.us",
+    "groupName": "RNA",
+    "senderName": "Dave Grafics",
+    "messageContent": "Because of giveaway you dey stress me 😂",
+    "createdAt": "2026-10-17T20:23:51.597Z"
+  }
+]

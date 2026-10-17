@@ -1,0 +1,698 @@
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import path from 'path';
+import fs from 'fs';
+import pino from 'pino';
+import {
+  makeWASocket,
+  DisconnectReason,
+  useMultiFileAuthState,
+  fetchLatestBaileysVersion,
+  WAMessage,
+} from '@whiskeysockets/baileys';
+import { createClient } from '@supabase/supabase-js';
+
+dotenv.config();
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const PORT = process.env.PORT || 5001;
+const SESSIONS_DIR = path.resolve(process.env.AUTH_SESSIONS_DIR || './auth_sessions');
+
+if (!fs.existsSync(SESSIONS_DIR)) {
+  fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+}
+
+// Supabase client
+const supabaseUrl = process.env.SUPABASE_URL || 'https://bogkfyqaoczlejgaksee.supabase.co';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+// In-memory active sockets & QR storage
+interface MonitoredGroupConfig {
+  groupJid: string;
+  groupName: string;
+  keywords: string[];
+  isActive: boolean;
+}
+
+interface IngestedMessage {
+  id?: string;
+  groupJid: string;
+  senderJid: string;
+  senderName: string;
+  content: string;
+  timestamp: string;
+}
+
+interface ActiveSession {
+  userId: string;
+  socket: any;
+  qr: string | null;
+  status: 'disconnected' | 'qr_ready' | 'connecting' | 'connected' | 'failed';
+  phoneNumber?: string;
+  pushName?: string;
+  monitoredGroups?: Map<string, MonitoredGroupConfig>;
+  recentAlerts?: Array<{
+    id: string;
+    keyword: string;
+    groupJid: string;
+    groupName: string;
+    senderName: string;
+    messageContent: string;
+    createdAt: string;
+  }>;
+  groupMessages?: Map<string, IngestedMessage[]>;
+}
+
+const activeSessions = new Map<string, ActiveSession>();
+
+const logger = pino({ level: 'info' });
+
+// Function to start or restore Baileys connection for a user
+async function startWhatsAppSession(userId: string): Promise<ActiveSession> {
+  if (activeSessions.has(userId)) {
+    const existing = activeSessions.get(userId)!;
+    if (existing.status === 'connected') {
+      return existing;
+    }
+  }
+
+  const userSessionDir = path.join(SESSIONS_DIR, userId);
+  const { state, saveCreds } = await useMultiFileAuthState(userSessionDir);
+  const { version } = await fetchLatestBaileysVersion();
+
+  const existing = activeSessions.get(userId);
+  const monitoredConfigFile = path.join(userSessionDir, 'monitored_groups.json');
+  const alertsFile = path.join(userSessionDir, 'recent_alerts.json');
+
+  let initialGroups = existing?.monitoredGroups || new Map<string, MonitoredGroupConfig>();
+  let initialAlerts = existing?.recentAlerts || [];
+
+  // If memory was empty, restore from disk file
+  if (initialGroups.size === 0 && fs.existsSync(monitoredConfigFile)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(monitoredConfigFile, 'utf-8'));
+      for (const item of data) {
+        initialGroups.set(item.groupJid, item);
+      }
+    } catch {}
+  }
+
+  if (initialAlerts.length === 0 && fs.existsSync(alertsFile)) {
+    try {
+      initialAlerts = JSON.parse(fs.readFileSync(alertsFile, 'utf-8'));
+    } catch {}
+  }
+  const messagesFile = path.join(userSessionDir, 'group_messages.json');
+  let initialMessages = existing?.groupMessages || new Map<string, IngestedMessage[]>();
+
+  if (initialMessages.size === 0 && fs.existsSync(messagesFile)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(messagesFile, 'utf-8'));
+      for (const [jid, list] of Object.entries(data)) {
+        initialMessages.set(jid, list as IngestedMessage[]);
+      }
+    } catch {}
+  }
+
+  const sessionObj: ActiveSession = {
+    userId,
+    socket: null,
+    qr: null,
+    status: 'connecting',
+    monitoredGroups: initialGroups,
+    recentAlerts: initialAlerts,
+    groupMessages: initialMessages,
+  };
+  activeSessions.set(userId, sessionObj);
+
+  // Pre-load monitored groups from Supabase if accessible
+  try {
+    const { data: dbGroups } = await supabase
+      .from('monitored_groups')
+      .select('*')
+      .eq('user_id', userId);
+    if (dbGroups && dbGroups.length > 0) {
+      if (!sessionObj.monitoredGroups) sessionObj.monitoredGroups = new Map();
+      for (const dg of dbGroups) {
+        sessionObj.monitoredGroups.set(dg.group_jid, {
+          groupJid: dg.group_jid,
+          groupName: dg.group_name,
+          keywords: dg.keywords || [],
+          isActive: dg.is_active !== false,
+        });
+      }
+      fs.writeFileSync(monitoredConfigFile, JSON.stringify(Array.from(sessionObj.monitoredGroups.values()), null, 2));
+      logger.info(`[${userId}] Pre-loaded ${dbGroups.length} monitored group(s) into memory`);
+    }
+  } catch (err: any) {
+    logger.warn(`[${userId}] Note: could not pre-load groups directly: ${err.message}`);
+  }
+
+  const sock = makeWASocket({
+    version,
+    auth: state,
+    printQRInTerminal: false,
+    logger: pino({ level: 'silent' }),
+    browser: ['ChatDigest', 'Chrome', '1.0.0'],
+  });
+
+  sessionObj.socket = sock;
+
+  // Credential update handler
+  sock.ev.on('creds.update', saveCreds);
+
+  // Connection update handler (QR, Disconnect, Connect)
+  sock.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect, qr } = update;
+
+    if (qr) {
+      sessionObj.qr = qr;
+      sessionObj.status = 'qr_ready';
+      logger.info(`[${userId}] QR code generated`);
+
+      try {
+        await supabase.from('whatsapp_sessions').upsert(
+          {
+            user_id: userId,
+            status: 'qr_ready',
+          },
+          { onConflict: 'user_id' }
+        );
+      } catch {}
+    }
+
+    if (connection === 'close') {
+      const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+      logger.warn(`[${userId}] Connection closed. Reason: ${statusCode}, Reconnecting: ${shouldReconnect}`);
+
+      sessionObj.status = 'disconnected';
+      sessionObj.qr = null;
+
+      try {
+        await supabase.from('whatsapp_sessions').upsert(
+          {
+            user_id: userId,
+            status: 'disconnected',
+          },
+          { onConflict: 'user_id' }
+        );
+      } catch {}
+
+      if (shouldReconnect) {
+        startWhatsAppSession(userId);
+      } else {
+        // Logged out: remove session folder
+        fs.rmSync(userSessionDir, { recursive: true, force: true });
+        activeSessions.delete(userId);
+      }
+    } else if (connection === 'open') {
+      logger.info(`[${userId}] WhatsApp successfully connected!`);
+      sessionObj.status = 'connected';
+      sessionObj.qr = null;
+
+      const userJid = sock.user?.id || '';
+      const pushName = sock.user?.name || 'WhatsApp User';
+      const phoneNumber = userJid.split(':')[0] || userJid.split('@')[0];
+
+      sessionObj.phoneNumber = phoneNumber;
+      sessionObj.pushName = pushName;
+
+      try {
+        await supabase.from('whatsapp_sessions').upsert(
+          {
+            user_id: userId,
+            status: 'connected',
+            phone_number: phoneNumber,
+            push_name: pushName,
+            last_active: new Date().toISOString(),
+          },
+          { onConflict: 'user_id' }
+        );
+      } catch {}
+    }
+  });
+
+  // Message ingestion handler
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') return;
+
+    for (const msg of messages) {
+      if (!msg.message) continue;
+      const jid = msg.key.remoteJid;
+      if (!jid || !jid.endsWith('@g.us')) continue; // Group chats only
+
+      const isFromMe = !!msg.key.fromMe;
+      // Allow user messages to also be evaluated if sent by self (for live testing)
+      const messageContent =
+        msg.message?.conversation ||
+        msg.message?.extendedTextMessage?.text ||
+        msg.message?.imageMessage?.caption ||
+        msg.message?.videoMessage?.caption ||
+        '';
+
+      if (!messageContent.trim()) continue;
+
+      const senderJid = msg.key.participant || msg.key.remoteJid || (isFromMe ? sock.user?.id : '');
+      const senderName = isFromMe ? 'You' : (msg.pushName || 'Participant');
+      const timestamp = new Date((Number(msg.messageTimestamp) || Date.now() / 1000) * 1000).toISOString();
+
+      logger.info(`[${userId}] Ingesting group msg from ${senderName} in ${jid}: "${messageContent.slice(0, 40)}"`);
+
+      // 1. Resolve monitored group configuration: check in-memory map first, then fall back to Supabase query
+      let monitoredGroup = sessionObj.monitoredGroups?.get(jid);
+      if (!monitoredGroup) {
+        try {
+          const { data } = await supabase
+            .from('monitored_groups')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('group_jid', jid)
+            .maybeSingle();
+          if (data) {
+            monitoredGroup = {
+              groupJid: data.group_jid,
+              groupName: data.group_name,
+              keywords: data.keywords || [],
+              isActive: data.is_active !== false,
+            };
+            sessionObj.monitoredGroups?.set(jid, monitoredGroup);
+          }
+        } catch {
+          // Ignored
+        }
+      }
+
+      const keywords: string[] = monitoredGroup?.keywords || [];
+      const lowerText = messageContent.toLowerCase();
+      // Case-insensitive check for configured keywords
+      const matched = keywords.filter((kw) => lowerText.includes(kw.trim().toLowerCase()));
+
+      logger.info(`[${userId}] Keyword check in ${jid} - Keywords: [${keywords.join(', ')}] - Matched: [${matched.join(', ')}]`);
+
+      // 2. Store in group messages buffer for instant AI Summarization
+      if (!sessionObj.groupMessages) sessionObj.groupMessages = new Map();
+      const groupList = sessionObj.groupMessages.get(jid) || [];
+      groupList.push({
+        groupJid: jid,
+        senderJid: senderJid || '',
+        senderName,
+        content: messageContent,
+        timestamp,
+      });
+      // Keep up to 1000 messages per group
+      if (groupList.length > 1000) groupList.splice(0, groupList.length - 1000);
+      sessionObj.groupMessages.set(jid, groupList);
+
+      // Persist group messages buffer to disk asynchronously (merging with existing file)
+      try {
+        const filePath = path.join(userSessionDir, 'group_messages.json');
+        let existingDisk: Record<string, IngestedMessage[]> = {};
+        if (fs.existsSync(filePath)) {
+          try {
+            existingDisk = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+          } catch {}
+        }
+        for (const [gJid, msgs] of sessionObj.groupMessages.entries()) {
+          existingDisk[gJid] = msgs;
+        }
+        fs.writeFileSync(filePath, JSON.stringify(existingDisk, null, 2));
+      } catch {}
+
+      // Insert into messages table
+      try {
+        await supabase.from('messages').insert({
+          group_jid: jid,
+          sender_jid: senderJid || '',
+          sender_name: senderName,
+          content: messageContent,
+          timestamp,
+          processed: false,
+          has_keyword_match: matched.length > 0,
+          matched_keywords: matched,
+        });
+      } catch {}
+
+      // 3. If keywords matched, log instant alert for user
+      if (matched.length > 0) {
+        const groupTitle = monitoredGroup?.groupName || 'WhatsApp Group';
+
+        for (const kw of matched) {
+          logger.info(`🚨 [${userId}] KEYWORD ALERT TRIGGERED! Keyword: "${kw}" in "${groupTitle}" by ${senderName}`);
+
+          const alertRecord = {
+            id: `alert_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+            user_id: userId,
+            group_jid: jid,
+            group_name: groupTitle,
+            sender_name: senderName,
+            keyword: kw,
+            message_content: messageContent,
+            created_at: new Date().toISOString(),
+          };
+
+          // Store in bridge session memory for instant dashboard fetch
+          if (!sessionObj.recentAlerts) sessionObj.recentAlerts = [];
+          sessionObj.recentAlerts.unshift({
+            id: alertRecord.id,
+            keyword: kw,
+            groupJid: jid,
+            groupName: groupTitle,
+            senderName,
+            messageContent,
+            createdAt: alertRecord.created_at,
+          });
+          if (sessionObj.recentAlerts.length > 100) {
+            sessionObj.recentAlerts = sessionObj.recentAlerts.slice(0, 100);
+          }
+
+          // Persist alerts to disk
+          try {
+            const userDir = path.join(SESSIONS_DIR, userId);
+            fs.writeFileSync(path.join(userDir, 'recent_alerts.json'), JSON.stringify(sessionObj.recentAlerts, null, 2));
+          } catch {}
+
+          // Push to Next.js internal endpoint
+          fetch('http://localhost:3000/api/alerts/internal', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(alertRecord),
+          }).catch((err) => {
+            logger.warn(`Failed to push alert to Next.js internal endpoint: ${err.message}`);
+          });
+
+          // Also attempt Supabase insert directly
+          try {
+            await supabase.from('keyword_alerts').insert(alertRecord);
+          } catch {}
+        }
+      }
+    }
+  });
+
+  return sessionObj;
+}
+
+// REST Endpoints for Next.js
+
+// 1. Start new session (generates QR)
+app.post('/api/session/start', async (req, res) => {
+  const { userId } = req.body;
+  if (!userId) {
+    return res.status(400).json({ error: 'userId is required' });
+  }
+
+  try {
+    const session = await startWhatsAppSession(userId);
+    return res.json({
+      status: session.status,
+      qr: session.qr,
+    });
+  } catch (err: any) {
+    logger.error(err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// 2. Check session status
+app.get('/api/session/:userId/status', (req, res) => {
+  const { userId } = req.params;
+  const session = activeSessions.get(userId);
+
+  if (!session) {
+    return res.json({ status: 'disconnected', qr: null });
+  }
+
+  return res.json({
+    status: session.status,
+    qr: session.qr,
+    phoneNumber: session.phoneNumber,
+    pushName: session.pushName,
+  });
+});
+
+// 3. List all WhatsApp groups the session is part of
+app.get('/api/session/:userId/groups', async (req, res) => {
+  const { userId } = req.params;
+  const session = activeSessions.get(userId);
+
+  if (!session || session.status !== 'connected' || !session.socket) {
+    return res.status(400).json({ error: 'WhatsApp session not connected' });
+  }
+
+  try {
+    const chats = await session.socket.groupFetchAllParticipating();
+    const groupsList = Object.values(chats).map((group: any) => ({
+      id: group.id,
+      name: group.subject,
+      participantsCount: group.participants?.length || 0,
+      creation: group.creation,
+    }));
+
+    // Cross-reference with monitored groups in memory and Supabase
+    const memoryGroups = session.monitoredGroups || new Map();
+    let dbGroups: any[] = [];
+    try {
+      const { data } = await supabase
+        .from('monitored_groups')
+        .select('*')
+        .eq('user_id', userId);
+      dbGroups = data || [];
+    } catch {}
+
+    const dbMap = new Map(dbGroups.map((m: any) => [m.group_jid, m]));
+
+    const combined = groupsList.map((g) => {
+      const memConfig = memoryGroups.get(g.id);
+      const dbConfig = dbMap.get(g.id);
+      const isMon = !!(memConfig ? memConfig.isActive : dbConfig?.is_active);
+      const kw = memConfig ? memConfig.keywords : dbConfig?.keywords || [];
+      return {
+        id: g.id,
+        name: g.name,
+        isMonitored: isMon,
+        keywords: kw,
+      };
+    });
+
+    return res.json({ groups: combined, isLive: true });
+  } catch (err: any) {
+    logger.error(err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// 3b. Sync monitored groups directly from Next.js into memory
+app.post('/api/session/:userId/monitored-groups', (req, res) => {
+  const { userId } = req.params;
+  const { groupJid, groupName, keywords, isActive } = req.body;
+
+  let session = activeSessions.get(userId);
+  if (!session) {
+    session = {
+      userId,
+      socket: null,
+      qr: null,
+      status: 'disconnected',
+      monitoredGroups: new Map(),
+      recentAlerts: [],
+    };
+    activeSessions.set(userId, session);
+  }
+
+  if (!session.monitoredGroups) {
+    session.monitoredGroups = new Map();
+  }
+
+  if (isActive === false) {
+    session.monitoredGroups.delete(groupJid);
+    logger.info(`[${userId}] Removed group ${groupJid} from in-memory monitor`);
+  } else {
+    session.monitoredGroups.set(groupJid, {
+      groupJid,
+      groupName,
+      keywords: keywords || [],
+      isActive: true,
+    });
+    logger.info(`[${userId}] Synced in-memory monitored group "${groupName}" (${groupJid}) with keywords: [${(keywords || []).join(', ')}]`);
+  }
+
+  // Persist to user session dir on disk
+  try {
+    const userDir = path.join(SESSIONS_DIR, userId);
+    if (!fs.existsSync(userDir)) fs.mkdirSync(userDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(userDir, 'monitored_groups.json'),
+      JSON.stringify(Array.from(session.monitoredGroups.values()), null, 2)
+    );
+  } catch {}
+
+  return res.json({
+    success: true,
+    monitoredCount: session.monitoredGroups.size,
+    monitored: Array.from(session.monitoredGroups.values()),
+  });
+});
+
+// 3c. Get live memory alerts
+app.get('/api/session/:userId/alerts', (req, res) => {
+  const { userId } = req.params;
+  let session = activeSessions.get(userId);
+  let memAlerts = session?.recentAlerts || [];
+
+  // Always merge with persisted disk alerts so nothing is lost
+  const alertsFile = path.join(SESSIONS_DIR, userId, 'recent_alerts.json');
+  let diskAlerts: any[] = [];
+  if (fs.existsSync(alertsFile)) {
+    try {
+      diskAlerts = JSON.parse(fs.readFileSync(alertsFile, 'utf-8'));
+    } catch {}
+  }
+
+  // Combine and deduplicate
+  const combined = [...memAlerts];
+  const seen = new Set(combined.map((a: any) => a.id || `${a.groupJid}_${a.keyword}_${a.messageContent}`));
+  for (const da of diskAlerts) {
+    const key = da.id || `${da.groupJid}_${da.keyword}_${da.messageContent}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      combined.push(da);
+    }
+  }
+
+  // Sort newest first
+  combined.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  if (session) {
+    session.recentAlerts = combined;
+  }
+
+  return res.json({
+    alerts: combined,
+  });
+});
+
+// 3d. Get group messages within timeframe for AI Summaries
+app.get('/api/session/:userId/messages', (req, res) => {
+  const { userId } = req.params;
+  const { groupJid, hoursBack } = req.query;
+
+  const session = activeSessions.get(userId);
+  const userSessionDir = path.join(SESSIONS_DIR, userId);
+  const messagesFile = path.join(userSessionDir, 'group_messages.json');
+
+  let allGroupMessages: IngestedMessage[] = [];
+
+  if (session && session.groupMessages && groupJid && session.groupMessages.has(groupJid as string)) {
+    allGroupMessages = session.groupMessages.get(groupJid as string) || [];
+  } else if (fs.existsSync(messagesFile)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(messagesFile, 'utf-8'));
+      if (groupJid && data[groupJid as string]) {
+        allGroupMessages = data[groupJid as string];
+      }
+    } catch {}
+  }
+
+  const hours = Number(hoursBack) || 24;
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).getTime();
+
+  const filtered = allGroupMessages.filter((m) => {
+    const t = new Date(m.timestamp).getTime();
+    return t >= cutoff;
+  });
+
+  return res.json({
+    groupJid,
+    count: filtered.length,
+    messages: filtered,
+  });
+});
+
+// 4. Logout / disconnect session
+app.post('/api/session/:userId/logout', async (req, res) => {
+  const { userId } = req.params;
+  const session = activeSessions.get(userId);
+
+  if (session && session.socket) {
+    try {
+      await session.socket.logout();
+    } catch {}
+  }
+
+  const userSessionDir = path.join(SESSIONS_DIR, userId);
+  fs.rmSync(userSessionDir, { recursive: true, force: true });
+  activeSessions.delete(userId);
+
+  return res.json({ success: true });
+});
+
+// 5. Send message or summary back to WhatsApp group
+app.post('/api/message/send', async (req, res) => {
+  const { userId, groupJid, text } = req.body;
+  const session = activeSessions.get(userId);
+
+  if (!session || session.status !== 'connected' || !session.socket) {
+    return res.status(400).json({ error: 'Session not connected' });
+  }
+
+  try {
+    const result = await session.socket.sendMessage(groupJid, { text });
+    return res.json({ success: true, messageId: result.key.id });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Scheduled message worker: polls scheduled_messages table every 30 seconds
+setInterval(async () => {
+  try {
+    const now = new Date().toISOString();
+    const { data: pending, error } = await supabase
+      .from('scheduled_messages')
+      .select('*')
+      .eq('status', 'pending')
+      .lte('scheduled_for', now)
+      .limit(10);
+
+    if (error || !pending || pending.length === 0) return;
+
+    for (const item of pending) {
+      const session = activeSessions.get(item.user_id);
+      if (session && session.status === 'connected' && session.socket) {
+        try {
+          await session.socket.sendMessage(item.group_jid, { text: item.message_content });
+          await supabase
+            .from('scheduled_messages')
+            .update({ status: 'sent', sent_at: new Date().toISOString() })
+            .eq('id', item.id);
+          logger.info(`Scheduled message sent to ${item.group_jid}`);
+        } catch (err: any) {
+          await supabase
+            .from('scheduled_messages')
+            .update({ status: 'failed', error_message: err.message })
+            .eq('id', item.id);
+        }
+      }
+    }
+  } catch (err) {
+    // Background polling catch
+  }
+}, 30000);
+
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    activeSessionsCount: activeSessions.size,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.listen(PORT, () => {
+  logger.info(`WhatsApp Baileys Bridge Service listening on port ${PORT}`);
+});

@@ -11,6 +11,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { PLAN_LIMITS } from '@/types';
+import Footer from '@/components/Footer';
 
 export default function LandingPage() {
   const jsonLd = {
@@ -257,28 +258,8 @@ export default function LandingPage() {
         </section>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-gray-200 py-10 sm:py-12 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-6">
-          <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
-            <div className="relative h-10 sm:h-12 w-auto flex items-center">
-              <Image
-                src="/logo.png"
-                alt="ChatDigest Logo"
-                width={170}
-                height={44}
-                className="h-8 sm:h-10 w-auto object-contain"
-              />
-            </div>
-            <p className="text-xs text-gray-500 sm:border-l sm:border-gray-200 sm:pl-4 sm:py-1">
-              WhatsApp Group Summarization & Intelligence Bot
-            </p>
-          </div>
-          <p className="text-xs text-gray-500">
-            &copy; {new Date().getFullYear()} ChatDigest. All rights reserved.
-          </p>
-        </div>
-      </footer>
+      {/* Responsive Mobile-Friendly Footer */}
+      <Footer />
     </div>
   );
 }

@@ -74,6 +74,7 @@ export const metadata: Metadata = {
 };
 
 import { Toaster } from "@/components/ui/Toaster";
+import CookieConsentBanner from "@/components/CookieConsentBanner";
 
 export default function RootLayout({
   children,
@@ -88,6 +89,7 @@ export default function RootLayout({
       <body className="antialiased min-h-screen bg-slate-50 text-slate-900">
         {children}
         <Toaster />
+        <CookieConsentBanner />
       </body>
     </html>
   );

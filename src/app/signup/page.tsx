@@ -14,11 +14,16 @@ export default function SignupPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [agreeTerms, setAgreeTerms] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleEmailSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!agreeTerms) {
+      setErrorMsg('You must agree to the Terms of Service and Privacy Policy before creating an account.');
+      return;
+    }
     setLoading(true);
     setErrorMsg(null);
     setSuccessMsg(null);
@@ -186,9 +191,37 @@ export default function SignupPage() {
               </div>
             </div>
 
+            {/* Terms & Privacy Consent Checkbox */}
+            <div className="flex items-start gap-2.5 pt-1">
+              <input
+                id="agreeTerms"
+                name="agreeTerms"
+                type="checkbox"
+                required
+                checked={agreeTerms}
+                onChange={(e) => setAgreeTerms(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 mt-0.5 cursor-pointer"
+              />
+              <label htmlFor="agreeTerms" className="text-xs text-gray-600 leading-relaxed cursor-pointer">
+                I agree to the{' '}
+                <Link href="/terms" target="_blank" className="font-semibold text-emerald-700 hover:text-emerald-800 underline">
+                  Terms of Service
+                </Link>
+                ,{' '}
+                <Link href="/privacy" target="_blank" className="font-semibold text-emerald-700 hover:text-emerald-800 underline">
+                  Privacy Policy
+                </Link>
+                , and{' '}
+                <Link href="/cookies" target="_blank" className="font-semibold text-emerald-700 hover:text-emerald-800 underline">
+                  Cookie Policy
+                </Link>
+                .
+              </label>
+            </div>
+
             <button
               type="submit"
-              disabled={loading || googleLoading}
+              disabled={loading || googleLoading || !agreeTerms}
               className="w-full mt-2 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-semibold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition-colors disabled:opacity-50 text-sm"
             >
               {loading ? (

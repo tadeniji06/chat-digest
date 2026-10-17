@@ -90,6 +90,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const body = await request.json().catch(() => ({}));
+    const { action, phoneNumber } = body;
+
+    // Handle pairing code request for single-device linking
+    if (action === 'pairing-code' && phoneNumber) {
+      const res = await fetch(`${BRIDGE_URL}/api/session/pairing-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, phoneNumber }),
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        return NextResponse.json(
+          { error: `Bridge service returned: ${errorText}` },
+          { status: res.status }
+        );
+      }
+
+      const data = await res.json();
+      return NextResponse.json(data);
+    }
+
     // Call bridge service to start a new session QR generation
     const res = await fetch(`${BRIDGE_URL}/api/session/start`, {
       method: 'POST',

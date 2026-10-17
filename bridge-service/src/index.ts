@@ -52,6 +52,7 @@ interface ActiveSession {
   userId: string;
   socket: any;
   qr: string | null;
+  pairingCode?: string | null;
   status: 'disconnected' | 'qr_ready' | 'connecting' | 'connected' | 'failed';
   phoneNumber?: string;
   pushName?: string;
@@ -412,10 +413,52 @@ app.post('/api/session/start', async (req, res) => {
     return res.json({
       status: session.status,
       qr: session.qr,
+      pairingCode: session.pairingCode || null,
     });
   } catch (err: any) {
     logger.error(err);
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// 1b. Request 8-digit Pairing Code for Single-Device linking
+app.post('/api/session/pairing-code', async (req, res) => {
+  const { userId, phoneNumber } = req.body;
+  if (!userId || !phoneNumber) {
+    return res.status(400).json({ error: 'userId and phoneNumber are required' });
+  }
+
+  // Clean phone number: remove +, spaces, dashes
+  const cleanNumber = String(phoneNumber).replace(/[^0-9]/g, '');
+  if (cleanNumber.length < 8) {
+    return res.status(400).json({ error: 'Please enter a valid phone number with country code' });
+  }
+
+  try {
+    let session = activeSessions.get(userId);
+    if (!session || !session.socket) {
+      session = await startWhatsAppSession(userId);
+    }
+
+    // Wait slightly if socket is initializing
+    if (!session.socket) {
+      return res.status(500).json({ error: 'Socket initializing, please try again in a few seconds' });
+    }
+
+    // Request pairing code from Baileys
+    const code = await session.socket.requestPairingCode(cleanNumber);
+    session.pairingCode = code;
+    logger.info(`[${userId}] Pairing code generated for ${cleanNumber}: ${code}`);
+
+    return res.json({
+      success: true,
+      pairingCode: code,
+      phoneNumber: cleanNumber,
+      status: session.status,
+    });
+  } catch (err: any) {
+    logger.error(`[${userId}] Error requesting pairing code: ${err.message}`);
+    return res.status(500).json({ error: err.message || 'Failed to request pairing code' });
   }
 });
 
@@ -425,12 +468,13 @@ app.get('/api/session/:userId/status', (req, res) => {
   const session = activeSessions.get(userId);
 
   if (!session) {
-    return res.json({ status: 'disconnected', qr: null });
+    return res.json({ status: 'disconnected', qr: null, pairingCode: null });
   }
 
   return res.json({
     status: session.status,
     qr: session.qr,
+    pairingCode: session.pairingCode || null,
     phoneNumber: session.phoneNumber,
     pushName: session.pushName,
   });

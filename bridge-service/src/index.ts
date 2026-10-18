@@ -196,7 +196,7 @@ async function startWhatsAppSession(userId: string): Promise<ActiveSession> {
     auth: state,
     printQRInTerminal: false,
     logger: pino({ level: 'silent' }),
-    browser: Browsers.macOS('Desktop'),
+    browser: Browsers.ubuntu('Chrome'),
     connectTimeoutMs: 60000,
     keepAliveIntervalMs: 30000,
     defaultQueryTimeoutMs: 60000,
@@ -215,7 +215,8 @@ async function startWhatsAppSession(userId: string): Promise<ActiveSession> {
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
-    if (qr) {
+    // Only update and store QR if the user is not in pairing code mode
+    if (qr && !sessionObj.pairingCode) {
       sessionObj.qr = qr;
       sessionObj.status = 'qr_ready';
       logger.info(`[${userId}] QR code generated`);
@@ -234,7 +235,8 @@ async function startWhatsAppSession(userId: string): Promise<ActiveSession> {
     if (connection === 'close') {
       const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
       const isLoggedOut = statusCode === DisconnectReason.loggedOut;
-      logger.warn(`[${userId}] Connection closed. Reason: ${statusCode}, LoggedOut: ${isLoggedOut}`);
+      const wasRegistered = !!sock.authState?.creds?.registered;
+      logger.warn(`[${userId}] Connection closed. Reason: ${statusCode}, LoggedOut: ${isLoggedOut}, Registered: ${wasRegistered}`);
 
       sessionObj.status = 'disconnected';
       sessionObj.qr = null;
@@ -249,18 +251,21 @@ async function startWhatsAppSession(userId: string): Promise<ActiveSession> {
         );
       } catch {}
 
-      // If genuinely logged out by user action, clear session
-      if (isLoggedOut) {
+      // If genuinely logged out by user on an existing linked account, clear session
+      if (isLoggedOut && wasRegistered) {
         logger.info(`[${userId}] User officially logged out. Clearing credentials.`);
         fs.rmSync(userSessionDir, { recursive: true, force: true });
         activeSessions.delete(userId);
-      } else {
-        // Automatic reconnection for 408, 515, transient network resets
+      } else if (wasRegistered) {
+        // Automatic reconnection for already registered sessions
         const delay = statusCode === 408 ? 5000 : 3000;
         logger.info(`[${userId}] Scheduling automatic reconnection in ${delay}ms...`);
         setTimeout(() => {
           startWhatsAppSession(userId);
         }, delay);
+      } else {
+        // Unregistered session (e.g. pending pairing code or QR scan expired)
+        logger.info(`[${userId}] Unregistered socket closed (code ${statusCode}). Ready for next attempt.`);
       }
     } else if (connection === 'open') {
       logger.info(`[${userId}] WhatsApp successfully connected!`);

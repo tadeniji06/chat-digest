@@ -9,6 +9,7 @@ import {
   DisconnectReason,
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
+  Browsers,
   WAMessage,
 } from '@whiskeysockets/baileys';
 import { createClient } from '@supabase/supabase-js';
@@ -159,7 +160,10 @@ async function startWhatsAppSession(userId: string): Promise<ActiveSession> {
     auth: state,
     printQRInTerminal: false,
     logger: pino({ level: 'silent' }),
-    browser: ['ChatDigest', 'Chrome', '1.0.0'],
+    browser: Browsers.ubuntu('Chrome'),
+    connectTimeoutMs: 60000,
+    keepAliveIntervalMs: 25000,
+    emitOwnEvents: false,
   });
 
   sessionObj.socket = sock;
@@ -428,7 +432,7 @@ app.post('/api/session/pairing-code', async (req, res) => {
     return res.status(400).json({ error: 'userId and phoneNumber are required' });
   }
 
-  // Clean phone number: remove +, spaces, dashes
+  // Clean phone number: remove +, spaces, dashes, leading zeroes
   const cleanNumber = String(phoneNumber).replace(/[^0-9]/g, '');
   if (cleanNumber.length < 8) {
     return res.status(400).json({ error: 'Please enter a valid phone number with country code' });
@@ -436,14 +440,25 @@ app.post('/api/session/pairing-code', async (req, res) => {
 
   try {
     let session = activeSessions.get(userId);
-    if (!session || !session.socket) {
+
+    // If session is disconnected or had a 401, remove old auth files for a fresh pairing handshake
+    if (!session || !session.socket || session.status === 'disconnected') {
+      const userSessionDir = path.join(SESSIONS_DIR, userId);
+      try {
+        const credsFile = path.join(userSessionDir, 'creds.json');
+        if (fs.existsSync(credsFile)) {
+          fs.rmSync(credsFile, { force: true });
+        }
+      } catch {}
       session = await startWhatsAppSession(userId);
     }
 
-    // Wait slightly if socket is initializing
     if (!session.socket) {
-      return res.status(500).json({ error: 'Socket initializing, please try again in a few seconds' });
+      return res.status(500).json({ error: 'WhatsApp socket initializing, please retry in 3 seconds' });
     }
+
+    // Small delay to ensure WebSocket handshake is established before requesting code
+    await new Promise((resolve) => setTimeout(resolve, 1500));
 
     // Request pairing code from Baileys
     const code = await session.socket.requestPairingCode(cleanNumber);
@@ -458,7 +473,15 @@ app.post('/api/session/pairing-code', async (req, res) => {
     });
   } catch (err: any) {
     logger.error(`[${userId}] Error requesting pairing code: ${err.message}`);
-    return res.status(500).json({ error: err.message || 'Failed to request pairing code' });
+    // If connection was closed or 401, reset session so user can retry cleanly
+    try {
+      const userSessionDir = path.join(SESSIONS_DIR, userId);
+      fs.rmSync(path.join(userSessionDir, 'creds.json'), { force: true });
+      activeSessions.delete(userId);
+    } catch {}
+    return res.status(500).json({
+      error: `Pairing failed (${err.message}). We have refreshed your session, please click "Get 8-Digit Pairing Code" again.`,
+    });
   }
 });
 

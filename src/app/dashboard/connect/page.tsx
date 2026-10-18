@@ -317,9 +317,12 @@ export default function WhatsAppConnectPage() {
                         type="tel"
                         value={phoneNumber}
                         onChange={(e) => setPhoneNumber(e.target.value)}
-                        placeholder="+234 812 345 6789 or 2348123456789"
+                        placeholder="e.g. +234 812 345 6789 or 08123456789"
                         className="w-full px-3.5 py-2.5 text-sm rounded-lg bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-colors"
                       />
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        Enter with country code or local format (e.g. 0812... or +234812...).
+                      </p>
                     </div>
 
                     <button
@@ -330,7 +333,7 @@ export default function WhatsAppConnectPage() {
                       {requestingCode ? (
                         <>
                           <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>Generating Pairing Code...</span>
+                          <span>Generating Fresh Pairing Code...</span>
                         </>
                       ) : (
                         <>
@@ -344,9 +347,14 @@ export default function WhatsAppConnectPage() {
                   {/* Generated Code Display Box */}
                   {pairingCode && (
                     <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 space-y-3 animate-in fade-in duration-300">
-                      <span className="text-xs font-bold text-emerald-900 uppercase tracking-wider block">
-                        Your WhatsApp Pairing Code
-                      </span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-emerald-900 uppercase tracking-wider block">
+                          Your WhatsApp Pairing Code
+                        </span>
+                        <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                          Valid for 60s
+                        </span>
+                      </div>
                       <div className="flex items-center justify-between bg-white px-4 py-3 rounded-lg border border-emerald-300 shadow-2xs">
                         <span className="font-mono text-2xl font-extrabold tracking-widest text-emerald-900">
                           {pairingCode}
@@ -354,18 +362,24 @@ export default function WhatsAppConnectPage() {
                         <button
                           type="button"
                           onClick={handleCopyCode}
-                          className="p-2 rounded-md hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition-colors"
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-gray-100 text-gray-600 hover:text-gray-900 transition-colors border border-gray-200 text-xs font-medium"
                           title="Copy Code"
                         >
                           {copiedCode ? (
-                            <Check className="w-5 h-5 text-emerald-600" />
+                            <>
+                              <Check className="w-4 h-4 text-emerald-600" />
+                              <span className="text-emerald-700 font-semibold">Copied!</span>
+                            </>
                           ) : (
-                            <Copy className="w-5 h-5 text-gray-500" />
+                            <>
+                              <Copy className="w-4 h-4 text-gray-500" />
+                              <span>Copy</span>
+                            </>
                           )}
                         </button>
                       </div>
-                      <p className="text-[11px] text-emerald-800">
-                        Code expires in 60 seconds. Enter this code inside WhatsApp now.
+                      <p className="text-[11px] text-emerald-800 leading-snug">
+                        Open WhatsApp on your phone immediately and enter this code before it expires.
                       </p>
                     </div>
                   )}
@@ -374,7 +388,7 @@ export default function WhatsAppConnectPage() {
                 {/* Step-by-Step Instructions */}
                 <div className="space-y-4 max-w-md">
                   <h4 className="text-xs font-bold text-gray-900 uppercase tracking-wider">
-                    How to Link on the Same Device:
+                    How to Link on this Phone:
                   </h4>
                   <ol className="space-y-3 text-xs text-gray-700">
                     <li className="flex items-start gap-3">
@@ -382,7 +396,7 @@ export default function WhatsAppConnectPage() {
                         1
                       </span>
                       <span className="leading-relaxed">
-                        Copy the <strong>8-character pairing code</strong> generated on the left.
+                        Copy or remember the <strong>8-character code</strong> above.
                       </span>
                     </li>
                     <li className="flex items-start gap-3">
@@ -390,7 +404,7 @@ export default function WhatsAppConnectPage() {
                         2
                       </span>
                       <span className="leading-relaxed">
-                        Open <strong>WhatsApp</strong> on this phone.
+                        Open <strong>WhatsApp</strong> on your phone.
                       </span>
                     </li>
                     <li className="flex items-start gap-3">
@@ -398,7 +412,7 @@ export default function WhatsAppConnectPage() {
                         3
                       </span>
                       <span className="leading-relaxed">
-                        Tap <strong>Settings</strong> (or 3 dots on Android) &gt;{' '}
+                        Go to <strong>Settings</strong> (iPhone) or <strong>⋮ Menu</strong> (Android) &gt;{' '}
                         <strong>Linked Devices</strong>.
                       </span>
                     </li>
@@ -407,8 +421,8 @@ export default function WhatsAppConnectPage() {
                         4
                       </span>
                       <span className="leading-relaxed">
-                        Tap <strong>Link a Device</strong>, then at the bottom tap{' '}
-                        <strong className="text-emerald-700">&quot;Link with phone number instead&quot;</strong>.
+                        Tap <strong>Link a Device</strong>. When the scanner opens, tap{' '}
+                        <strong className="text-emerald-700">&quot;Link with phone number instead&quot;</strong> at the bottom.
                       </span>
                     </li>
                     <li className="flex items-start gap-3">
@@ -416,14 +430,14 @@ export default function WhatsAppConnectPage() {
                         5
                       </span>
                       <span className="leading-relaxed">
-                        Paste or type the 8-character code. Your device will link instantly!
+                        Enter the code (with or without the dash). WhatsApp connects immediately!
                       </span>
                     </li>
                   </ol>
 
                   <div className="p-3.5 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-500 flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>WhatsApp verifies this via end-to-end encrypted multi-device pairing.</span>
+                    <span>Multi-device connection encrypted with WhatsApp end-to-end security.</span>
                   </div>
                 </div>
               </div>

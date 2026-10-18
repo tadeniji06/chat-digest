@@ -562,29 +562,49 @@ app.post('/api/session/pairing-code', async (req, res) => {
     if (!userId || !phoneNumber) {
         return res.status(400).json({ error: 'userId and phoneNumber are required' });
     }
-    // Clean phone number: remove +, spaces, dashes, leading zeroes
-    const cleanNumber = String(phoneNumber).replace(/[^0-9]/g, '');
+    // Clean phone number: remove +, spaces, dashes, brackets
+    let cleanNumber = String(phoneNumber).replace(/[^0-9]/g, '');
+    // Handle local Nigerian / common international number formats
+    if (cleanNumber.startsWith('2340') && cleanNumber.length === 14) {
+        cleanNumber = '234' + cleanNumber.slice(4);
+    }
+    else if (cleanNumber.startsWith('0') && cleanNumber.length === 11) {
+        cleanNumber = '234' + cleanNumber.slice(1);
+    }
     if (cleanNumber.length < 8) {
         return res.status(400).json({ error: 'Please enter a valid phone number with country code' });
     }
     try {
         let session = activeSessions.get(userId);
-        // If session is disconnected or had a 401, remove old auth files for a fresh pairing handshake
-        if (!session || !session.socket || session.status === 'disconnected') {
-            const userSessionDir = path_1.default.join(SESSIONS_DIR, userId);
+        const userSessionDir = path_1.default.join(SESSIONS_DIR, userId);
+        // If session is already connected, inform user
+        if (session && session.status === 'connected') {
+            return res.json({
+                success: true,
+                status: 'connected',
+                phoneNumber: session.phoneNumber,
+                message: 'WhatsApp session is already connected.',
+            });
+        }
+        // Always reset any dirty unlinked or QR-ready socket so pairing code runs on a pristine handshake
+        if (session && session.socket) {
             try {
-                const credsFile = path_1.default.join(userSessionDir, 'creds.json');
-                if (fs_1.default.existsSync(credsFile)) {
-                    fs_1.default.rmSync(credsFile, { force: true });
-                }
+                session.socket.end(undefined);
             }
             catch { }
-            session = await startWhatsAppSession(userId);
         }
+        try {
+            if (fs_1.default.existsSync(userSessionDir)) {
+                fs_1.default.rmSync(userSessionDir, { recursive: true, force: true });
+            }
+        }
+        catch { }
+        activeSessions.delete(userId);
+        // Start a brand-new socket specifically for pairing
+        session = await startWhatsAppSession(userId);
         if (userEmail) {
             session.userEmail = userEmail;
             try {
-                const userSessionDir = path_1.default.join(SESSIONS_DIR, userId);
                 const metaFile = path_1.default.join(userSessionDir, 'session_meta.json');
                 let currentMeta = {};
                 if (fs_1.default.existsSync(metaFile)) {
@@ -601,30 +621,33 @@ app.post('/api/session/pairing-code', async (req, res) => {
         if (!session.socket) {
             return res.status(500).json({ error: 'WhatsApp socket initializing, please retry in 3 seconds' });
         }
-        // Small delay to ensure WebSocket handshake is established before requesting code
-        await new Promise((resolve) => setTimeout(resolve, 1500));
+        // Wait 2 seconds to ensure WebSocket transport is established before calling requestPairingCode
+        await new Promise((resolve) => setTimeout(resolve, 2000));
         // Request pairing code from Baileys
-        const code = await session.socket.requestPairingCode(cleanNumber);
-        session.pairingCode = code;
-        logger.info(`[${userId}] Pairing code generated for ${cleanNumber}: ${code}`);
+        const rawCode = await session.socket.requestPairingCode(cleanNumber);
+        const formattedCode = rawCode && rawCode.length === 8 && !rawCode.includes('-')
+            ? `${rawCode.slice(0, 4)}-${rawCode.slice(4)}`
+            : rawCode;
+        session.pairingCode = formattedCode;
+        logger.info(`[${userId}] Pairing code generated for ${cleanNumber}: ${formattedCode}`);
         return res.json({
             success: true,
-            pairingCode: code,
+            pairingCode: formattedCode,
+            rawCode,
             phoneNumber: cleanNumber,
             status: session.status,
         });
     }
     catch (err) {
         logger.error(`[${userId}] Error requesting pairing code: ${err.message}`);
-        // If connection was closed or 401, reset session so user can retry cleanly
         try {
             const userSessionDir = path_1.default.join(SESSIONS_DIR, userId);
-            fs_1.default.rmSync(path_1.default.join(userSessionDir, 'creds.json'), { force: true });
+            fs_1.default.rmSync(userSessionDir, { recursive: true, force: true });
             activeSessions.delete(userId);
         }
         catch { }
         return res.status(500).json({
-            error: `Pairing failed (${err.message}). We have refreshed your session, please click "Get 8-Digit Pairing Code" again.`,
+            error: `Pairing failed (${err.message}). We refreshed your session, please click "Get 8-Digit Pairing Code" again.`,
         });
     }
 });
@@ -885,14 +908,24 @@ app.post('/api/admin/bot/pair', async (req, res) => {
     }
     try {
         const session = await startWhatsAppSession(SYSTEM_BOT_USER_ID);
-        const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
+        // Clean phone number: remove +, spaces, dashes, brackets
+        let cleanNumber = String(phoneNumber).replace(/[^0-9]/g, '');
+        if (cleanNumber.startsWith('2340') && cleanNumber.length === 14) {
+            cleanNumber = '234' + cleanNumber.slice(4);
+        }
+        else if (cleanNumber.startsWith('0') && cleanNumber.length === 11) {
+            cleanNumber = '234' + cleanNumber.slice(1);
+        }
         // Allow socket 2.5s to initialize before requesting pairing code
         setTimeout(async () => {
             try {
                 if (session.socket && session.status !== 'connected') {
-                    const code = await session.socket.requestPairingCode(cleanNumber);
-                    session.pairingCode = code;
-                    logger.info(`[Official Bot] Generated pairing code: ${code} for phone: ${cleanNumber}`);
+                    const rawCode = await session.socket.requestPairingCode(cleanNumber);
+                    const formattedCode = rawCode && rawCode.length === 8 && !rawCode.includes('-')
+                        ? `${rawCode.slice(0, 4)}-${rawCode.slice(4)}`
+                        : rawCode;
+                    session.pairingCode = formattedCode;
+                    logger.info(`[Official Bot] Generated pairing code: ${formattedCode} for phone: ${cleanNumber}`);
                 }
             }
             catch (err) {

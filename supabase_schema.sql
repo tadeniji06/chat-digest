@@ -107,10 +107,21 @@ create table if not exists public.keyword_alerts (
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
-  insert into public.users (id, email, subscription_tier)
-  values (new.id, new.email, 'base')
-  on conflict (id) do nothing;
+  insert into public.users (id, email, subscription_tier, payment_status)
+  values (
+    new.id,
+    coalesce(new.email, 'user@chatdigest.app'),
+    'free',
+    'active'
+  )
+  on conflict (id) do update set
+    email = excluded.email;
   return new;
+exception
+  when others then
+    -- Log error and never crash auth signup
+    raise warning 'handle_new_user error: %', sqlerrm;
+    return new;
 end;
 $$ language plpgsql security definer;
 

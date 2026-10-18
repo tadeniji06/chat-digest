@@ -62,6 +62,7 @@ export async function POST(request: Request) {
       tx_ref,
       amount: selectedPlan.amount,
       currency: 'NGN',
+      payment_options: 'card,banktransfer,ussd,account',
       redirect_url: `${origin}/api/payment/callback`,
       meta: {
         user_id: user.id,

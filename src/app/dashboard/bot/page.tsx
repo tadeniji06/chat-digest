@@ -13,11 +13,22 @@ import {
   Check,
   Phone,
   Zap,
+  Lock,
+  KeyRound,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getUserFriendlyError } from '@/utils/errors';
 
+const ADMIN_BOT_SECRET = 'theprinceOTF999#';
+
 export default function AdminBotPage() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [inputPassword, setInputPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState(false);
+
   const [botStatus, setBotStatus] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [connectMethod, setConnectMethod] = useState<'pairing_code' | 'qr'>('pairing_code');
@@ -26,6 +37,27 @@ export default function AdminBotPage() {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [requestingCode, setRequestingCode] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
+
+  // Check persistent session authentication on mount
+  useEffect(() => {
+    const saved = sessionStorage.getItem('cd_admin_bot_auth');
+    if (saved === 'true') {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (inputPassword === ADMIN_BOT_SECRET) {
+      setIsAuthenticated(true);
+      sessionStorage.setItem('cd_admin_bot_auth', 'true');
+      setPasswordError(false);
+      toast.success('Admin access granted!');
+    } else {
+      setPasswordError(true);
+      toast.error('Invalid administrative password.');
+    }
+  };
 
   const fetchBotStatus = async () => {
     try {
@@ -124,6 +156,77 @@ export default function AdminBotPage() {
   };
 
   const isConnected = botStatus?.status === 'connected';
+
+  // Password Protection Gate
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white border border-gray-200 rounded-2xl shadow-xl p-8 space-y-6 text-center">
+          <div className="inline-flex p-3 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-100 shadow-sm">
+            <Lock className="w-8 h-8" />
+          </div>
+
+          <div className="space-y-1.5">
+            <h2 className="text-xl font-bold text-gray-900 tracking-tight">
+              Administrative Bot Console
+            </h2>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              This area is restricted to system administrators. Enter your security key to configure or pair the official WhatsApp bot.
+            </p>
+          </div>
+
+          <form onSubmit={handlePasswordSubmit} className="space-y-4">
+            <div className="relative text-left">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                Admin Password
+              </label>
+              <div className="relative">
+                <KeyRound className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={inputPassword}
+                  onChange={(e) => {
+                    setInputPassword(e.target.value);
+                    setPasswordError(false);
+                  }}
+                  placeholder="Enter security key"
+                  className={`w-full pl-9 pr-10 py-2.5 text-sm border rounded-xl focus:outline-none transition-all ${
+                    passwordError
+                      ? 'border-red-400 focus:ring-2 focus:ring-red-200 bg-red-50/30'
+                      : 'border-gray-300 focus:ring-2 focus:ring-emerald-500'
+                  }`}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {passwordError && (
+                <p className="text-[11px] text-red-600 font-semibold mt-1.5">
+                  Incorrect administrative password.
+                </p>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
+            >
+              <span>Unlock Admin Access</span>
+            </button>
+          </form>
+
+          <p className="text-[11px] text-gray-400">
+            Protected endpoint &bull; ChatDigest Internal Bot Management
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 max-w-4xl">

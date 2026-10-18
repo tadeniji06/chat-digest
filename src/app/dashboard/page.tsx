@@ -135,22 +135,27 @@ export default async function DashboardPage() {
   const { cookies } = await import('next/headers');
   const cookieStore = await cookies();
   const cookieSub = cookieStore.get('cd_sub_active')?.value;
+  const validTiers: SubscriptionTier[] = ['free', 'basic', 'pro', 'max', 'enterprise'];
   let cookieTier: SubscriptionTier | null = null;
   if (cookieSub) {
     const [cUserId, cTier] = cookieSub.split(':');
-    if (cUserId === userId && ['base', 'pro', 'max'].includes(cTier)) {
+    if (cUserId === userId && validTiers.includes(cTier as SubscriptionTier)) {
       cookieTier = cTier as SubscriptionTier;
     }
   }
 
-  const resolvedTier =
+  const rawTier =
     cookieTier ||
     profileRes.data?.subscription_tier ||
     user?.user_metadata?.subscription_tier ||
-    'base';
+    'free';
+
+  const expiresAt = profileRes.data?.subscription_expires_at || user?.user_metadata?.subscription_expires_at;
+  const isExpired = rawTier !== 'free' && expiresAt ? Date.now() > new Date(expiresAt).getTime() : false;
+  const resolvedTier: SubscriptionTier = isExpired ? 'free' : (rawTier as SubscriptionTier);
 
   const tier: SubscriptionTier = resolvedTier as SubscriptionTier;
-  const plan = tier === 'none' ? PLAN_LIMITS.base : PLAN_LIMITS[tier];
+  const plan = PLAN_LIMITS[tier] || PLAN_LIMITS.free;
 
   return (
     <div className="space-y-8">

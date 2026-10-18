@@ -5,9 +5,20 @@ create extension if not exists "uuid-ossp";
 create table if not exists public.users (
   id uuid references auth.users on delete cascade primary key,
   email text not null,
-  subscription_tier text not null default 'base' check (subscription_tier in ('base', 'pro', 'max')),
+  subscription_tier text not null default 'free' check (subscription_tier in ('free', 'basic', 'pro', 'max', 'enterprise')),
+  payment_status text not null default 'active' check (payment_status in ('unpaid', 'paid', 'active', 'cancelled', 'expired')),
+  subscription_expires_at timestamp with time zone,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
+
+-- Ensure existing users tables get migrated with new columns & constraints if already created
+alter table public.users add column if not exists payment_status text not null default 'active';
+alter table public.users add column if not exists subscription_expires_at timestamp with time zone;
+alter table public.users drop constraint if exists users_subscription_tier_check;
+alter table public.users add constraint users_subscription_tier_check check (subscription_tier in ('free', 'basic', 'pro', 'max', 'enterprise'));
+alter table public.users alter column subscription_tier set default 'free';
+alter table public.users drop constraint if exists users_payment_status_check;
+alter table public.users add constraint users_payment_status_check check (payment_status in ('unpaid', 'paid', 'active', 'cancelled', 'expired'));
 
 -- 2. WHATSAPP SESSIONS TABLE
 create table if not exists public.whatsapp_sessions (
@@ -119,63 +130,81 @@ alter table public.scheduled_messages enable row level security;
 alter table public.keyword_alerts enable row level security;
 
 -- USERS POLICIES
+drop policy if exists "Users can view their own profile" on public.users;
 create policy "Users can view their own profile" on public.users
   for select using (auth.uid() = id);
 
+drop policy if exists "Users can update their own profile" on public.users;
 create policy "Users can update their own profile" on public.users
   for update using (auth.uid() = id);
 
 -- WHATSAPP SESSIONS POLICIES
+drop policy if exists "Users can view own whatsapp sessions" on public.whatsapp_sessions;
 create policy "Users can view own whatsapp sessions" on public.whatsapp_sessions
   for select using (auth.uid() = user_id);
 
+drop policy if exists "Users can insert own whatsapp sessions" on public.whatsapp_sessions;
 create policy "Users can insert own whatsapp sessions" on public.whatsapp_sessions
   for insert with check (auth.uid() = user_id);
 
+drop policy if exists "Users can update own whatsapp sessions" on public.whatsapp_sessions;
 create policy "Users can update own whatsapp sessions" on public.whatsapp_sessions
   for update using (auth.uid() = user_id);
 
+drop policy if exists "Users can delete own whatsapp sessions" on public.whatsapp_sessions;
 create policy "Users can delete own whatsapp sessions" on public.whatsapp_sessions
   for delete using (auth.uid() = user_id);
 
 -- MONITORED GROUPS POLICIES
+drop policy if exists "Users can view own monitored groups" on public.monitored_groups;
 create policy "Users can view own monitored groups" on public.monitored_groups
   for select using (auth.uid() = user_id);
 
+drop policy if exists "Users can insert own monitored groups" on public.monitored_groups;
 create policy "Users can insert own monitored groups" on public.monitored_groups
   for insert with check (auth.uid() = user_id);
 
+drop policy if exists "Users can update own monitored groups" on public.monitored_groups;
 create policy "Users can update own monitored groups" on public.monitored_groups
   for update using (auth.uid() = user_id);
 
+drop policy if exists "Users can delete own monitored groups" on public.monitored_groups;
 create policy "Users can delete own monitored groups" on public.monitored_groups
   for delete using (auth.uid() = user_id);
 
 -- SUMMARIES POLICIES
+drop policy if exists "Users can view own summaries" on public.summaries;
 create policy "Users can view own summaries" on public.summaries
   for select using (auth.uid() = user_id);
 
+drop policy if exists "Users can insert own summaries" on public.summaries;
 create policy "Users can insert own summaries" on public.summaries
   for insert with check (auth.uid() = user_id);
 
+drop policy if exists "Users can delete own summaries" on public.summaries;
 create policy "Users can delete own summaries" on public.summaries
   for delete using (auth.uid() = user_id);
 
 -- SCHEDULED MESSAGES POLICIES
+drop policy if exists "Users can view own scheduled messages" on public.scheduled_messages;
 create policy "Users can view own scheduled messages" on public.scheduled_messages
   for select using (auth.uid() = user_id);
 
+drop policy if exists "Users can insert own scheduled messages" on public.scheduled_messages;
 create policy "Users can insert own scheduled messages" on public.scheduled_messages
   for insert with check (auth.uid() = user_id);
 
 -- KEYWORD ALERTS POLICIES
+drop policy if exists "Users can view own alerts" on public.keyword_alerts;
 create policy "Users can view own alerts" on public.keyword_alerts
   for select using (auth.uid() = user_id);
 
+drop policy if exists "Users can delete own alerts" on public.keyword_alerts;
 create policy "Users can delete own alerts" on public.keyword_alerts
   for delete using (auth.uid() = user_id);
 
 -- MESSAGES: Accessible to authenticated users whose monitored_groups matches group_jid
+drop policy if exists "Users can view messages for their monitored groups" on public.messages;
 create policy "Users can view messages for their monitored groups" on public.messages
   for select using (
     exists (

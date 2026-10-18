@@ -24,9 +24,11 @@ export default async function DashboardLayout({
   let cookieTier: SubscriptionTier | null = null;
   let cookiePaid = false;
 
+  const validTiers: SubscriptionTier[] = ['free', 'basic', 'pro', 'max', 'enterprise'];
+
   if (cookieSub) {
     const [cUserId, cTier, cStatus] = cookieSub.split(':');
-    if (cUserId === user.id && (cStatus === 'active' || cStatus === 'paid')) {
+    if (cUserId === user.id && validTiers.includes(cTier as SubscriptionTier) && (cStatus === 'active' || cStatus === 'paid')) {
       cookiePaid = true;
       cookieTier = cTier as SubscriptionTier;
     }
@@ -42,21 +44,28 @@ export default async function DashboardLayout({
   // 3. Check user.user_metadata
   const metadataTier = user.user_metadata?.subscription_tier;
   const metadataPayment = user.user_metadata?.payment_status;
+  const metadataExpiresAt = user.user_metadata?.subscription_expires_at;
 
-  const tier = (userProfile?.subscription_tier || cookieTier || metadataTier || 'none') as SubscriptionTier;
-  const paymentStatus = userProfile?.payment_status || (cookiePaid ? 'active' : null) || metadataPayment || 'unpaid';
+  const rawTier = (userProfile?.subscription_tier || cookieTier || metadataTier || 'free') as SubscriptionTier;
+  const paymentStatus = userProfile?.payment_status || (cookiePaid ? 'active' : null) || metadataPayment || (rawTier === 'free' ? 'active' : 'unpaid');
+  const expiresAt = userProfile?.subscription_expires_at || metadataExpiresAt || null;
 
-  // Strict payment gate: If user has no active plan or payment status is not active/paid, redirect to subscribe
-  const isPaid = paymentStatus === 'active' || paymentStatus === 'paid';
-  const hasPlan = tier !== 'none';
-
-  if (!hasPlan || !isPaid) {
-    redirect('/subscribe');
+  // Check 30-day expiration for paid subscriptions
+  let isExpired = false;
+  if (rawTier !== 'free' && expiresAt) {
+    const expTime = new Date(expiresAt).getTime();
+    if (Date.now() > expTime) {
+      isExpired = true;
+    }
   }
+
+  const isPaid = (paymentStatus === 'active' || paymentStatus === 'paid') && !isExpired;
+  // If paid tier expired, fall back to free tier or redirect if on paid gating
+  const activeTier: SubscriptionTier = isExpired ? 'free' : rawTier;
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen bg-gray-50 text-gray-900">
-      <Sidebar userEmail={user.email || 'User'} tier={tier} />
+      <Sidebar userEmail={user.email || 'User'} tier={activeTier} isExpired={isExpired} expiresAt={expiresAt} />
       <div className="flex-1 flex flex-col min-w-0">
         {/* Safety advisory banner */}
         <div className="bg-emerald-50/70 border-b border-emerald-100 px-4 sm:px-6 py-2.5 text-xs text-emerald-900 flex flex-col sm:flex-row sm:items-center justify-between gap-2">

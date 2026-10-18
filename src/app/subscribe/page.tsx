@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Check, ShieldCheck, Zap, Lock, AlertCircle, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { PLAN_LIMITS } from '@/types';
+import { PLAN_LIMITS, SubscriptionTier } from '@/types';
 
 function SubscribeContent() {
   const router = useRouter();
@@ -16,7 +16,30 @@ function SubscribeContent() {
   const isCancelled = searchParams.get('cancelled') === 'true';
   const hasError = searchParams.get('error');
 
-  const handleCheckout = async (tier: 'base' | 'pro' | 'max') => {
+  const handleCheckout = async (tier: SubscriptionTier) => {
+    if (tier === 'free') {
+      setLoadingTier('free');
+      try {
+        const res = await fetch('/api/payment/initialize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tier: 'free' }),
+        });
+        if (res.ok) {
+          toast.success('Free plan activated!');
+          router.push('/dashboard');
+          router.refresh();
+        } else {
+          toast.error('Failed to activate free tier');
+        }
+      } catch {
+        toast.error('Network error');
+      } finally {
+        setLoadingTier(null);
+      }
+      return;
+    }
+
     setLoadingTier(tier);
     try {
       const res = await fetch('/api/payment/initialize', {
@@ -50,7 +73,7 @@ function SubscribeContent() {
     router.refresh();
   };
 
-  const plans: Array<'base' | 'pro' | 'max'> = ['base', 'pro', 'max'];
+  const plans: SubscriptionTier[] = ['free', 'basic', 'pro', 'max', 'enterprise'];
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 selection:bg-emerald-600 selection:text-white">
@@ -79,18 +102,18 @@ function SubscribeContent() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-12">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
         <div className="text-center max-w-2xl mx-auto mb-10">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 mb-4">
             <Lock className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Membership Required</span>
+            <span>Membership Plans</span>
           </div>
 
           <h1 className="text-3xl font-bold tracking-tight text-gray-950">
             Activate Your ChatDigest Subscription
           </h1>
           <p className="mt-2 text-sm text-gray-600 leading-relaxed">
-            To connect your WhatsApp account, receive AI executive digests, and track keywords in real time, please select a subscription plan.
+            Select a subscription plan to monitor WhatsApp groups, receive AI executive digests, and track keywords in real time.
           </p>
         </div>
 
@@ -109,7 +132,7 @@ function SubscribeContent() {
         )}
 
         {/* Pricing Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
           {plans.map((t) => {
             const plan = PLAN_LIMITS[t];
             const isPro = t === 'pro';
@@ -117,93 +140,89 @@ function SubscribeContent() {
             return (
               <div
                 key={t}
-                className={`p-6 sm:p-7 rounded-xl border flex flex-col justify-between bg-white relative transition-shadow ${
+                className={`p-5 rounded-xl border flex flex-col justify-between bg-white relative transition-all ${
                   isPro
                     ? 'border-emerald-600 ring-2 ring-emerald-600 shadow-md'
-                    : 'border-gray-200 shadow-sm'
+                    : 'border-gray-200 shadow-sm hover:border-gray-300'
                 }`}
               >
                 {isPro && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-emerald-600 text-white">
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-600 text-white">
                     Recommended
                   </div>
                 )}
 
                 <div>
-                  <h2 className="text-xl font-bold text-gray-900">{plan.name}</h2>
-                  <div className="mt-4 flex items-baseline gap-1">
-                    <span className="text-3xl font-extrabold text-gray-950 tracking-tight">
+                  <h2 className="text-base font-bold text-gray-900">{plan.name}</h2>
+                  <div className="mt-3 flex items-baseline gap-1">
+                    <span className="text-2xl font-extrabold text-gray-950 tracking-tight">
                       {plan.price.split('/')[0]}
                     </span>
-                    <span className="text-xs text-gray-500">/month</span>
+                    <span className="text-[11px] text-gray-500">/month</span>
                   </div>
-                  <p className="text-xs text-gray-600 mt-2 min-h-9">
+                  <p className="text-xs text-gray-600 mt-2 min-h-12 leading-relaxed">
                     {plan.description}
                   </p>
 
-                  <div className="my-5 border-t border-gray-100" />
+                  <div className="my-4 border-t border-gray-100" />
 
-                  <ul className="space-y-3 text-xs text-gray-700">
-                    <li className="flex items-center gap-2.5">
-                      <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <ul className="space-y-2.5 text-xs text-gray-700">
+                    <li className="flex items-start gap-2">
+                      <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                       <span>
-                        Up to <strong>{plan.maxGroups} WhatsApp Group(s)</strong>
+                        <strong>{plan.maxGroups}</strong> Group(s)
                       </span>
                     </li>
-                    <li className="flex items-center gap-2.5">
-                      <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                      <span>Keyword alerts ({plan.keywordsLimit} max)</span>
-                    </li>
-                    <li className="flex items-center gap-2.5">
-                      {plan.hasSummaries ? (
-                        <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                      ) : (
-                        <span className="w-4 h-4 text-gray-300 shrink-0 text-center font-bold">&ndash;</span>
-                      )}
-                      <span className={plan.hasSummaries ? 'text-gray-900 font-medium' : 'text-gray-400'}>
-                        AI bullet summaries & action items
+                    <li className="flex items-start gap-2">
+                      <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                      <span>
+                        <strong>{plan.keywordsPerGroup}</strong> keywords / group
                       </span>
                     </li>
-                    <li className="flex items-center gap-2.5">
-                      {plan.hasWeeklyDigest ? (
-                        <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                      ) : (
-                        <span className="w-4 h-4 text-gray-300 shrink-0 text-center font-bold">&ndash;</span>
-                      )}
-                      <span className={plan.hasWeeklyDigest ? 'text-gray-900 font-medium' : 'text-gray-400'}>
-                        Weekly digest synthesis
+                    <li className="flex items-start gap-2">
+                      <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                      <span>
+                        {plan.isLifetimeSummary ? (
+                          <strong>1 AI summary forever</strong>
+                        ) : (
+                          <span>
+                            <strong>{plan.dailySummaries} summary/day</strong> (24h reset)
+                          </span>
+                        )}
                       </span>
                     </li>
-                    <li className="flex items-center gap-2.5">
-                      {plan.hasPastSearch ? (
-                        <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                      ) : (
-                        <span className="w-4 h-4 text-gray-300 shrink-0 text-center font-bold">&ndash;</span>
-                      )}
-                      <span className={plan.hasPastSearch ? 'text-gray-900 font-medium' : 'text-gray-400'}>
-                        Archive search of past messages
-                      </span>
-                    </li>
+                    {plan.hasWeeklyDigest && (
+                      <li className="flex items-start gap-2">
+                        <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                        <span>Weekly digest</span>
+                      </li>
+                    )}
+                    {plan.hasPastSearch && (
+                      <li className="flex items-start gap-2">
+                        <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                        <span>Past archive search</span>
+                      </li>
+                    )}
                   </ul>
                 </div>
 
-                <div className="mt-8">
+                <div className="mt-6">
                   <button
                     onClick={() => handleCheckout(t)}
                     disabled={loadingTier !== null}
-                    className={`w-full py-2.5 px-4 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 ${
+                    className={`w-full py-2.5 px-3 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 ${
                       isPro
-                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white font-bold'
                         : 'bg-gray-900 hover:bg-gray-800 text-white'
                     }`}
                   >
                     {loadingTier === t ? (
                       <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Initializing Checkout...</span>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Initializing...</span>
                       </>
                     ) : (
-                      <span>Pay with Flutterwave</span>
+                      <span>{t === 'free' ? 'Select Free Plan' : `Pay ₦${plan.amount.toLocaleString()}`}</span>
                     )}
                   </button>
                 </div>

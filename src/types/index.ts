@@ -1,32 +1,50 @@
-export type SubscriptionTier = 'none' | 'base' | 'pro' | 'max';
+export type SubscriptionTier = 'free' | 'basic' | 'pro' | 'max' | 'enterprise';
 
 export interface PlanFeature {
-  tier: 'base' | 'pro' | 'max';
+  tier: SubscriptionTier;
   name: string;
   price: string;
   amount: number;
   currency: string;
   maxGroups: number;
+  keywordsPerGroup: number;
+  dailySummaries: number;
+  isLifetimeSummary?: boolean;
   hasSummaries: boolean;
   hasWeeklyDigest: boolean;
   hasPastSearch: boolean;
-  keywordsLimit: number;
   description: string;
 }
 
-export const PLAN_LIMITS: Record<'base' | 'pro' | 'max', PlanFeature> = {
-  base: {
-    tier: 'base',
-    name: 'Base',
-    price: '₦1,500/mo',
-    amount: 1500,
+export const PLAN_LIMITS: Record<SubscriptionTier, PlanFeature> = {
+  free: {
+    tier: 'free',
+    name: 'Free',
+    price: '₦0/mo',
+    amount: 0,
     currency: 'NGN',
     maxGroups: 1,
-    hasSummaries: false,
+    keywordsPerGroup: 2,
+    dailySummaries: 1,
+    isLifetimeSummary: true,
+    hasSummaries: true,
     hasWeeklyDigest: false,
     hasPastSearch: false,
-    keywordsLimit: 5,
-    description: '1 WhatsApp group monitoring & instant real-time keyword alerts.',
+    description: '1 group monitoring, 2 keywords, and 1 AI summary forever.',
+  },
+  basic: {
+    tier: 'basic',
+    name: 'Basic',
+    price: '₦2,000/mo',
+    amount: 2000,
+    currency: 'NGN',
+    maxGroups: 3,
+    keywordsPerGroup: 2,
+    dailySummaries: 1,
+    hasSummaries: true,
+    hasWeeklyDigest: false,
+    hasPastSearch: false,
+    description: '3 groups monitoring, 2 keywords per group, 1 AI summary per day (resets every 24h).',
   },
   pro: {
     tier: 'pro',
@@ -34,12 +52,13 @@ export const PLAN_LIMITS: Record<'base' | 'pro' | 'max', PlanFeature> = {
     price: '₦5,000/mo',
     amount: 5000,
     currency: 'NGN',
-    maxGroups: 3,
+    maxGroups: 6,
+    keywordsPerGroup: 3,
+    dailySummaries: 3,
     hasSummaries: true,
     hasWeeklyDigest: false,
     hasPastSearch: false,
-    keywordsLimit: 15,
-    description: '3 groups, keyword alerts + Daily AI-powered bullet summaries.',
+    description: '6 groups monitoring, 3 keywords per group, 3 AI summaries per day (resets every 24h).',
   },
   max: {
     tier: 'max',
@@ -48,11 +67,26 @@ export const PLAN_LIMITS: Record<'base' | 'pro' | 'max', PlanFeature> = {
     amount: 10000,
     currency: 'NGN',
     maxGroups: 10,
+    keywordsPerGroup: 4,
+    dailySummaries: 5,
     hasSummaries: true,
     hasWeeklyDigest: true,
     hasPastSearch: true,
-    keywordsLimit: 50,
-    description: '10 groups, keyword alerts, AI summaries, weekly digest & past archive search.',
+    description: '10 groups monitoring, 4 keywords per group, 5 AI summaries per day (resets every 24h).',
+  },
+  enterprise: {
+    tier: 'enterprise',
+    name: 'Enterprise',
+    price: '₦25,000/mo',
+    amount: 25000,
+    currency: 'NGN',
+    maxGroups: 20,
+    keywordsPerGroup: 10,
+    dailySummaries: 10,
+    hasSummaries: true,
+    hasWeeklyDigest: true,
+    hasPastSearch: true,
+    description: '20 groups monitoring, 10 keywords per group, 10 AI summaries per day (resets every 24h).',
   },
 };
 

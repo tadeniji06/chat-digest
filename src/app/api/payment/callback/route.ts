@@ -41,7 +41,7 @@ export async function GET(request: Request) {
     ) {
       const supabase = await createClient();
       let userId = verifyData.data.meta?.user_id;
-      const tier = verifyData.data.meta?.tier || 'base';
+      const tier = (verifyData.data.meta?.tier || 'basic') as string;
 
       // Fallback: if user_id was not in meta, get current logged in user
       if (!userId) {

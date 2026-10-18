@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { GoogleGenAI } from '@google/genai';
+import { SubscriptionTier, PLAN_LIMITS } from '@/types';
 
 export async function GET(request: Request) {
   try {
@@ -61,34 +62,72 @@ export async function POST(request: Request) {
     const { cookies } = await import('next/headers');
     const cookieStore = await cookies();
     const cookieSub = cookieStore.get('cd_sub_active')?.value;
-    let cookieTier: string | null = null;
+    const validTiers: SubscriptionTier[] = ['free', 'basic', 'pro', 'max', 'enterprise'];
+    let cookieTier: SubscriptionTier | null = null;
     if (cookieSub) {
       const [cUserId, cTier] = cookieSub.split(':');
-      if (cUserId === user.id && ['base', 'pro', 'max'].includes(cTier)) {
-        cookieTier = cTier;
+      if (cUserId === user.id && validTiers.includes(cTier as SubscriptionTier)) {
+        cookieTier = cTier as SubscriptionTier;
       }
     }
 
     const { data: userProfile } = await supabase
       .from('users')
-      .select('subscription_tier, payment_status')
+      .select('subscription_tier, payment_status, subscription_expires_at')
       .eq('id', user.id)
       .maybeSingle();
 
-    const tier =
-      cookieTier ||
+    const expiresAt = userProfile?.subscription_expires_at || user.user_metadata?.subscription_expires_at;
+    let isExpired = false;
+    if (expiresAt) {
+      if (Date.now() > new Date(expiresAt).getTime()) {
+        isExpired = true;
+      }
+    }
+
+    const rawTier: SubscriptionTier =
+      (cookieTier ||
       userProfile?.subscription_tier ||
       user.user_metadata?.subscription_tier ||
-      'none';
+      'free') as SubscriptionTier;
 
-    if (tier !== 'pro' && tier !== 'max') {
-      return NextResponse.json(
-        {
-          error:
-            'AI Summarization requires an active Pro or Max subscription. Please upgrade to unlock executive digests and action items.',
-        },
-        { status: 403 }
-      );
+    const tier: SubscriptionTier = isExpired ? 'free' : rawTier;
+    const plan = PLAN_LIMITS[tier] || PLAN_LIMITS.free;
+
+    // Check summary limits:
+    if (tier === 'free') {
+      // Free plan: exactly 1 AI summary forever
+      const { count: lifetimeCount } = await supabase
+        .from('summaries')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+
+      if ((lifetimeCount || 0) >= 1) {
+        return NextResponse.json(
+          {
+            error:
+              'You have used your 1 free AI summary limit forever. Please upgrade to Basic, Pro, Max, or Enterprise to generate more daily digests.',
+          },
+          { status: 403 }
+        );
+      }
+    } else {
+      // Paid plan: check usage in last 24 hours
+      const past24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { count: dailyCount } = await supabase
+        .from('summaries')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .gte('created_at', past24h);
+
+      if ((dailyCount || 0) >= plan.dailySummaries) {
+        return NextResponse.json(
+          {
+            error: `You have reached your limit of ${plan.dailySummaries} summary(ies) for today on the ${plan.name} plan. Your quota resets 24 hours after your last generation, or upgrade your plan for higher daily limits.`,
+          },
+          { status: 429 }
+        );
+      }
     }
 
     // Fetch messages from that group across selected timeframe

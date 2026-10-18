@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { PLAN_LIMITS } from '@/types';
+import { PLAN_LIMITS, SubscriptionTier } from '@/types';
 
 const FLW_SECRET = process.env.FLUTTERWAVE_SECRET_KEY;
 
@@ -27,11 +27,33 @@ export async function POST(request: Request) {
     const { tier } = body;
     console.log('[Payment Initialize] Requested tier:', tier);
 
-    if (!tier || !['base', 'pro', 'max'].includes(tier)) {
+    const paidTiers: SubscriptionTier[] = ['basic', 'pro', 'max', 'enterprise'];
+
+    if (tier === 'free') {
+      // Free tier doesn't require payment; activate immediately for user
+      const expiresAt = new Date(Date.now() + 365 * 10 * 24 * 60 * 60 * 1000).toISOString();
+      await supabase.from('users').upsert({
+        id: user.id,
+        email: user.email || 'customer@chatdigest.app',
+        subscription_tier: 'free',
+        payment_status: 'active',
+        subscription_expires_at: expiresAt,
+      });
+      await supabase.auth.updateUser({
+        data: {
+          subscription_tier: 'free',
+          payment_status: 'active',
+          subscription_expires_at: expiresAt,
+        },
+      });
+      return NextResponse.json({ success: true, activatedFree: true });
+    }
+
+    if (!tier || !paidTiers.includes(tier as SubscriptionTier)) {
       return NextResponse.json({ error: 'Invalid plan selected' }, { status: 400 });
     }
 
-    const selectedPlan = PLAN_LIMITS[tier as 'base' | 'pro' | 'max'];
+    const selectedPlan = PLAN_LIMITS[tier as SubscriptionTier];
     const origin = new URL(request.url).origin;
     const tx_ref = `cd_${user.id.slice(0, 8)}_${Date.now()}`;
 

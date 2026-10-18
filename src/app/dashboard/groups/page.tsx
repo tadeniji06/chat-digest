@@ -22,7 +22,7 @@ interface GroupItem {
 export default function MonitoredGroupsPage() {
   const [groups, setGroups] = useState<GroupItem[]>([]);
   const [monitoredCount, setMonitoredCount] = useState(0);
-  const [tier, setTier] = useState<SubscriptionTier>('base');
+  const [tier, setTier] = useState<SubscriptionTier>('free');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'monitored' | 'all'>('monitored');
   const [searchTerm, setSearchTerm] = useState('');
@@ -61,7 +61,7 @@ export default function MonitoredGroupsPage() {
       .catch(() => {});
   }, []);
 
-  const plan = PLAN_LIMITS[tier === 'none' ? 'base' : tier];
+  const plan = PLAN_LIMITS[tier] || PLAN_LIMITS.free;
 
   const handleToggleMonitor = async (group: GroupItem) => {
     const willMonitor = !group.isMonitored;
@@ -132,6 +132,13 @@ export default function MonitoredGroupsPage() {
 
     if (currentKeywords.includes(newKeyword)) {
       setKeywordInput('');
+      return;
+    }
+
+    if (currentKeywords.length >= plan.keywordsPerGroup) {
+      toast.error(
+        `Keyword limit reached (${plan.keywordsPerGroup} per group on ${plan.name} plan). Please upgrade your subscription to add more keywords.`
+      );
       return;
     }
 
@@ -375,12 +382,19 @@ export default function MonitoredGroupsPage() {
                 {isMonitored && (
                   <div className="mt-5 pt-4 border-t border-gray-100 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
-                        <Tag className="w-3.5 h-3.5 text-emerald-600" />
-                        Trigger Keywords ({keywords.length})
-                      </span>
-                      <span className="text-xs text-gray-400">
-                        Alert triggers immediately when terms are mentioned
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                          <Tag className="w-3.5 h-3.5 text-emerald-600" />
+                          Trigger Keywords ({keywords.length} / {plan.keywordsPerGroup} max)
+                        </span>
+                        {keywords.length >= plan.keywordsPerGroup && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-100 text-amber-800" title={`Max keywords limit reached for ${plan.name} plan`}>
+                            Plan Max
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs text-gray-400" title="When any of these keywords are matched in incoming group messages, you will be notified immediately">
+                        Instant notification when terms appear
                       </span>
                     </div>
 

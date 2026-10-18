@@ -20,9 +20,11 @@ import { SubscriptionTier, PLAN_LIMITS } from '@/types';
 interface SidebarProps {
   userEmail: string;
   tier: SubscriptionTier;
+  isExpired?: boolean;
+  expiresAt?: string | null;
 }
 
-export function Sidebar({ userEmail, tier }: SidebarProps) {
+export function Sidebar({ userEmail, tier, isExpired, expiresAt }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -42,7 +44,18 @@ export function Sidebar({ userEmail, tier }: SidebarProps) {
     { name: 'Subscription & Plans', href: '/dashboard/subscription', icon: CreditCard },
   ];
 
-  const currentPlan = tier === 'none' ? PLAN_LIMITS.base : PLAN_LIMITS[tier];
+  const currentPlan = PLAN_LIMITS[tier] || PLAN_LIMITS.free;
+
+  // Calculate days remaining
+  let daysRemaining: number | null = null;
+  if (expiresAt && tier !== 'free') {
+    const diff = new Date(expiresAt).getTime() - Date.now();
+    if (diff > 0) {
+      daysRemaining = Math.ceil(diff / (1000 * 60 * 60 * 24));
+    } else {
+      daysRemaining = 0;
+    }
+  }
 
   const navContent = (
     <>
@@ -104,20 +117,31 @@ export function Sidebar({ userEmail, tier }: SidebarProps) {
           <span className="font-semibold text-gray-900">
             {currentPlan.name} Plan
           </span>
-          <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider bg-emerald-100 text-emerald-800">
-            {tier}
+          <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${
+            isExpired ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+          }`}>
+            {isExpired ? 'Expired' : tier}
           </span>
         </div>
-        <p className="text-gray-500 text-[11px] leading-relaxed mb-2.5">
-          {currentPlan.maxGroups} group(s) &bull;{' '}
-          {currentPlan.hasSummaries ? 'AI Summaries' : 'Keyword alerts'}
+        <p className="text-gray-500 text-[11px] leading-relaxed mb-2">
+          {currentPlan.maxGroups} group(s) &bull; {currentPlan.keywordsPerGroup} kw/group
         </p>
+
+        {tier !== 'free' && daysRemaining !== null && (
+          <div className="mb-2.5 px-2 py-1 bg-white rounded border border-gray-200 text-[10px] text-gray-700 flex items-center justify-between">
+            <span className="font-medium text-gray-500">Subscription:</span>
+            <span className={`font-bold ${daysRemaining <= 3 ? 'text-red-600' : 'text-emerald-700'}`}>
+              {daysRemaining > 0 ? `${daysRemaining} day(s) left` : 'Expired today'}
+            </span>
+          </div>
+        )}
+
         <Link
           href="/dashboard/subscription"
           onClick={() => setMobileOpen(false)}
           className="inline-block text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 hover:underline"
         >
-          Change Plan &rarr;
+          {isExpired ? 'Renew Access &rarr;' : 'Manage / Upgrade &rarr;'}
         </Link>
       </div>
 

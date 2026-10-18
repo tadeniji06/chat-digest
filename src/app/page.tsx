@@ -178,70 +178,72 @@ export default function LandingPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 max-w-5xl mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 max-w-7xl mx-auto">
               {Object.values(PLAN_LIMITS).map((plan) => {
                 const isPro = plan.tier === 'pro';
                 return (
                   <div
                     key={plan.tier}
-                    className={`p-6 sm:p-8 rounded-xl border flex flex-col justify-between bg-white ${
+                    className={`p-5 rounded-xl border flex flex-col justify-between bg-white relative transition-all ${
                       isPro
-                        ? 'border-emerald-600 ring-2 ring-emerald-600 shadow-md relative'
-                        : 'border-gray-200 shadow-sm'
+                        ? 'border-emerald-600 ring-2 ring-emerald-600 shadow-md'
+                        : 'border-gray-200 shadow-sm hover:border-gray-300'
                     }`}
                   >
                     {isPro && (
-                      <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-emerald-600 text-white">
+                      <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-600 text-white">
                         Recommended
                       </div>
                     )}
 
                     <div>
-                      <h3 className="text-xl font-bold text-gray-900">{plan.name}</h3>
-                      <div className="mt-4 flex items-baseline gap-1">
-                        <span className="text-3xl font-extrabold text-gray-900">
+                      <h3 className="text-base font-bold text-gray-900">{plan.name}</h3>
+                      <div className="mt-3 flex items-baseline gap-1">
+                        <span className="text-2xl font-extrabold text-gray-900">
                           {plan.price.split('/')[0]}
                         </span>
-                        <span className="text-sm text-gray-500">/month</span>
+                        <span className="text-[11px] text-gray-500">/month</span>
                       </div>
-                      <p className="text-xs text-gray-600 mt-2">{plan.description}</p>
-                      <div className="my-6 border-t border-gray-200" />
-                      <ul className="space-y-3 text-xs text-gray-700">
-                        <li className="flex items-center gap-2.5">
-                          <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                          <span>{plan.maxGroups} Group(s) Monitored</span>
+                      <p className="text-xs text-gray-600 mt-2 min-h-12 leading-relaxed">{plan.description}</p>
+                      <div className="my-4 border-t border-gray-100" />
+                      <ul className="space-y-2.5 text-xs text-gray-700">
+                        <li className="flex items-start gap-2">
+                          <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                          <span><strong>{plan.maxGroups}</strong> Group(s)</span>
                         </li>
-                        <li className="flex items-center gap-2.5">
-                          <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                          <span>Keyword Alerts ({plan.keywordsLimit} max)</span>
+                        <li className="flex items-start gap-2">
+                          <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                          <span><strong>{plan.keywordsPerGroup}</strong> keywords / group</span>
                         </li>
-                        <li className="flex items-center gap-2.5">
-                          {plan.hasSummaries ? (
-                            <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                          ) : (
-                            <span className="w-4 h-4 text-gray-300 font-bold text-center">&ndash;</span>
-                          )}
-                          <span className={plan.hasSummaries ? 'text-gray-900 font-medium' : 'text-gray-400'}>
-                            AI Summaries & Action Items
+                        <li className="flex items-start gap-2">
+                          <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                          <span>
+                            {plan.isLifetimeSummary ? (
+                              <strong>1 AI summary forever</strong>
+                            ) : (
+                              <span><strong>{plan.dailySummaries} summary/day</strong> (24h reset)</span>
+                            )}
                           </span>
                         </li>
-                        <li className="flex items-center gap-2.5">
-                          {plan.hasWeeklyDigest ? (
-                            <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                          ) : (
-                            <span className="w-4 h-4 text-gray-300 font-bold text-center">&ndash;</span>
-                          )}
-                          <span className={plan.hasWeeklyDigest ? 'text-gray-900 font-medium' : 'text-gray-400'}>
-                            Weekly Digest & Archive Search
-                          </span>
-                        </li>
+                        {plan.hasWeeklyDigest && (
+                          <li className="flex items-start gap-2">
+                            <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                            <span>Weekly digest</span>
+                          </li>
+                        )}
+                        {plan.hasPastSearch && (
+                          <li className="flex items-start gap-2">
+                            <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                            <span>Past archive search</span>
+                          </li>
+                        )}
                       </ul>
                     </div>
 
-                    <div className="mt-8">
+                    <div className="mt-6">
                       <Link
                         href="/signup"
-                        className={`block w-full py-2.5 px-4 rounded-lg text-sm font-semibold text-center transition-colors ${
+                        className={`block w-full py-2.5 px-3 rounded-lg text-xs font-semibold text-center transition-colors ${
                           isPro
                             ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                             : 'bg-gray-100 hover:bg-gray-200 text-gray-900'

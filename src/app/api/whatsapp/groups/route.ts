@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { SubscriptionTier, PLAN_LIMITS } from '@/types';
 
 const BRIDGE_URL = process.env.NEXT_PUBLIC_BRIDGE_URL || 'http://localhost:5001';
 
@@ -113,24 +114,52 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'groupJid and groupName required' }, { status: 400 });
     }
 
-    // Check user tier limits
+    // Check user tier limits and expiration
     const { cookies } = await import('next/headers');
     const cookieStore = await cookies();
     const cookieSub = cookieStore.get('cd_sub_active')?.value;
-    let cookieTier: string | null = null;
+    const validTiers: SubscriptionTier[] = ['free', 'basic', 'pro', 'max', 'enterprise'];
+    let cookieTier: SubscriptionTier | null = null;
     if (cookieSub) {
       const [cUserId, cTier] = cookieSub.split(':');
-      if (cUserId === user.id) cookieTier = cTier;
+      if (cUserId === user.id && validTiers.includes(cTier as SubscriptionTier)) {
+        cookieTier = cTier as SubscriptionTier;
+      }
     }
 
     const { data: userProfile } = await supabase
       .from('users')
-      .select('subscription_tier')
+      .select('subscription_tier, subscription_expires_at')
       .eq('id', user.id)
       .maybeSingle();
 
-    const tier = cookieTier || userProfile?.subscription_tier || user.user_metadata?.subscription_tier || 'base';
-    const limit = tier === 'max' ? 10 : tier === 'pro' ? 3 : 1;
+    const expiresAt = userProfile?.subscription_expires_at || user.user_metadata?.subscription_expires_at;
+    let isExpired = false;
+    if (expiresAt) {
+      if (Date.now() > new Date(expiresAt).getTime()) {
+        isExpired = true;
+      }
+    }
+
+    const rawTier: SubscriptionTier =
+      (cookieTier ||
+      userProfile?.subscription_tier ||
+      user.user_metadata?.subscription_tier ||
+      'free') as SubscriptionTier;
+
+    const tier: SubscriptionTier = isExpired ? 'free' : rawTier;
+    const plan = PLAN_LIMITS[tier] || PLAN_LIMITS.free;
+
+    // Validate keywords count per group according to tier allowance
+    const sanitizedKeywords = (keywords || []).map((k: string) => k.trim()).filter(Boolean);
+    if (sanitizedKeywords.length > plan.keywordsPerGroup) {
+      return NextResponse.json(
+        {
+          error: `Your ${plan.name} plan allows up to ${plan.keywordsPerGroup} keywords per group. You submitted ${sanitizedKeywords.length}. Please upgrade to add more keywords.`,
+        },
+        { status: 403 }
+      );
+    }
 
     // Check how many groups already monitored
     const { count } = await supabase
@@ -146,10 +175,10 @@ export async function POST(request: Request) {
       .eq('group_jid', groupJid)
       .maybeSingle();
 
-    if (!existing && (count || 0) >= limit) {
+    if (!existing && (count || 0) >= plan.maxGroups) {
       return NextResponse.json(
         {
-          error: `Your current plan (${tier.toUpperCase()}) allows monitoring up to ${limit} group(s). Please upgrade your subscription to monitor more groups.`,
+          error: `Your current plan (${plan.name}) allows monitoring up to ${plan.maxGroups} group(s). Please upgrade your subscription to monitor more groups.`,
         },
         { status: 403 }
       );

@@ -75,6 +75,15 @@ export const metadata: Metadata = {
 
 import { Toaster } from "@/components/ui/Toaster";
 import CookieConsentBanner from "@/components/CookieConsentBanner";
+import { Barlow_Condensed } from "next/font/google";
+
+const barlowCondensed = Barlow_Condensed({
+  subsets: ["latin"],
+  weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
+  style: ["normal", "italic"],
+  variable: "--font-barlow-condensed",
+  display: "swap",
+});
 
 export default function RootLayout({
   children,
@@ -82,11 +91,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className={barlowCondensed.variable}>
       <head>
         <link rel="icon" href="/favico.png" type="image/png" />
       </head>
-      <body className="antialiased min-h-screen bg-slate-50 text-slate-900">
+      <body className={`${barlowCondensed.className} antialiased min-h-screen bg-slate-50 text-slate-900`}>
         {children}
         <Toaster />
         <CookieConsentBanner />

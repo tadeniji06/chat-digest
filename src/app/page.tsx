@@ -39,15 +39,22 @@ export default async function LandingPage({
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
-    name: 'ChatDigest',
+    name: 'ChatDigest Nigeria',
     applicationCategory: 'BusinessApplication',
     operatingSystem: 'All',
+    url: 'https://www.chatdigest.site',
     description:
-      'Full-stack WhatsApp group intelligence & summarization service. Filter keywords, monitor conversations, and receive executive bullet digests.',
+      'WhatsApp group intelligence & AI summarization service in Nigeria. Filter keywords, monitor conversations, and receive executive bullet digests. Powered by Flutterwave NGN checkout.',
     offers: {
-      '@type': 'Offer',
-      price: '1500',
+      '@type': 'AggregateOffer',
       priceCurrency: 'NGN',
+      lowPrice: '2000',
+      highPrice: '50000',
+      offerCount: '5',
+    },
+    areaServed: {
+      '@type': 'Country',
+      name: 'Nigeria',
     },
   };
 

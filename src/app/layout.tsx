@@ -9,26 +9,50 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://chatdigest.app"),
+  metadataBase: new URL("https://www.chatdigest.site"),
   title: {
-    default: "ChatDigest | WhatsApp Group Summarization & Keyword Alerts Bot",
-    template: "%s | ChatDigest",
+    default: "ChatDigest | WhatsApp Group Summarizer & Keyword Alerts Bot in Nigeria",
+    template: "%s | ChatDigest Nigeria",
   },
   description:
-    "ChatDigest connects to your WhatsApp account to deliver AI-powered executive bullet summaries, action item tracking, and instant keyword alerts for busy groups.",
+    "ChatDigest is Nigeria's #1 WhatsApp AI bot for business owners, church groups, students, and community managers. Get instant keyword alerts, daily AI bullet digests, and action-point tracking on WhatsApp in Naira (NGN).",
   keywords: [
-    "WhatsApp Summaries",
-    "WhatsApp AI Bot",
-    "WhatsApp Group Digest",
+    // Core Nigeria targeted keywords
+    "WhatsApp Summarizer Nigeria",
+    "WhatsApp AI Bot Nigeria",
+    "WhatsApp group summary Lagos Abuja Nigeria",
+    "WhatsApp keyword alerts Nigeria",
+    "WhatsApp business automation Nigeria",
+    "Naira payment WhatsApp bot",
+    "Flutterwave WhatsApp bot subscription",
+    "WhatsApp bot for Nigerian businesses",
+    "WhatsApp group management Nigeria",
+    "Nigerian tech startup WhatsApp tool",
+    "WhatsApp meeting summarizer NGN",
+    "WhatsApp group AI digest Nigeria",
+    // Community & Use Cases
+    "WhatsApp church group summarizer Nigeria",
+    "WhatsApp estate group tracker Nigeria",
+    "WhatsApp university group study bot Nigeria",
+    "WhatsApp market group price alerts Nigeria",
+    "Nigerian SME WhatsApp customer alerts",
+    // General high-intent keywords
+    "WhatsApp AI summarizer",
+    "WhatsApp group chat summarization",
     "ChatDigest",
-    "WhatsApp Keyword Alerts",
-    "AI Meeting Summarizer",
-    "WhatsApp Business Automation",
-    "WhatsApp Web Summaries",
+    "ChatDigest Nigeria",
+    "WhatsApp executive brief",
+    "WhatsApp keyword tracker",
+    "WhatsApp group notes bot",
   ],
-  authors: [{ name: "ChatDigest Team" }],
-  creator: "ChatDigest",
-  publisher: "ChatDigest",
+  authors: [{ name: "ChatDigest Nigeria Team", url: "https://www.chatdigest.site" }],
+  creator: "ChatDigest Nigeria",
+  publisher: "ChatDigest Technologies",
+  category: "Business & Productivity Software",
+  classification: "WhatsApp AI Bot, Productivity, Messaging Automation",
+  alternates: {
+    canonical: "https://www.chatdigest.site",
+  },
   robots: {
     index: true,
     follow: true,
@@ -42,26 +66,26 @@ export const metadata: Metadata = {
   },
   openGraph: {
     type: "website",
-    locale: "en_US",
-    url: "https://chatdigest.app",
-    siteName: "ChatDigest",
-    title: "ChatDigest | WhatsApp Group Summarization & Keyword Alert Bot",
+    locale: "en_NG",
+    url: "https://www.chatdigest.site",
+    siteName: "ChatDigest Nigeria",
+    title: "ChatDigest | WhatsApp Group AI Summaries & Keyword Alerts in Nigeria",
     description:
-      "Transform high-volume WhatsApp group chats into concise AI digests and instant keyword notifications.",
+      "Save hours on high-volume WhatsApp groups in Nigeria. Get automated AI digests and real-time keyword notifications on your phone. Pay in Naira.",
     images: [
       {
         url: "/logo.png",
         width: 348,
         height: 92,
-        alt: "ChatDigest Logo",
+        alt: "ChatDigest Nigeria - WhatsApp Group Summarizer & Alert Bot",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "ChatDigest | WhatsApp Group Summarization & AI Alerts",
+    title: "ChatDigest Nigeria | WhatsApp AI Summarizer & Keyword Alerts",
     description:
-      "Never miss important WhatsApp updates. Get automated AI bullet summaries and real-time keyword triggers.",
+      "Nigeria's WhatsApp AI Bot. Auto bullet digests, keyword triggers, and action tracking for active Nigerian groups. Pay via Flutterwave in NGN.",
     images: ["/logo.png"],
   },
   icons: {
@@ -73,6 +97,7 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
 };
 
+import Script from "next/script";
 import { Toaster } from "@/components/ui/Toaster";
 import CookieConsentBanner from "@/components/CookieConsentBanner";
 import { Barlow_Condensed } from "next/font/google";
@@ -96,6 +121,16 @@ export default function RootLayout({
         <link rel="icon" href="/favico.png" type="image/png" />
       </head>
       <body className={`${barlowCondensed.className} antialiased min-h-screen bg-slate-50 text-slate-900`}>
+        {/* Microsoft Clarity Analytics */}
+        <Script id="microsoft-clarity" strategy="afterInteractive">
+          {`
+            (function(c,l,a,r,i,t,y){
+                c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+                t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+                y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+            })(window, document, "clarity", "script", "yzoqjg1791");
+          `}
+        </Script>
         {children}
         <Toaster />
         <CookieConsentBanner />

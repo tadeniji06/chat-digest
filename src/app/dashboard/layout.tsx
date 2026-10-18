@@ -3,6 +3,16 @@ import { cookies } from 'next/headers';
 import { createClient } from '@/utils/supabase/server';
 import { Sidebar } from '@/components/dashboard/Sidebar';
 import { SubscriptionTier } from '@/types';
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'Dashboard Overview',
+  description: 'Manage WhatsApp sessions, AI summaries, keyword alerts, and subscription in Nigeria.',
+  robots: {
+    index: false,
+    follow: false,
+  },
+};
 
 export default async function DashboardLayout({
   children,

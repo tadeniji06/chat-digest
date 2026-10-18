@@ -5,8 +5,11 @@ import { ArrowLeft, Shield, Lock, Eye, FileText, Server, AlertCircle } from 'luc
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy | ChatDigest',
-  description: 'Understand how ChatDigest protects your data, WhatsApp privacy, and personal information.',
+  title: 'Privacy Policy & Data Protection',
+  description: 'Understand how ChatDigest encrypts your data, protects WhatsApp privacy, and securely handles payments in Nigeria.',
+  alternates: {
+    canonical: 'https://www.chatdigest.site/privacy',
+  },
 };
 
 export default function PrivacyPage() {

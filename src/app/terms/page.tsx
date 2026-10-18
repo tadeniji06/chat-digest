@@ -5,8 +5,11 @@ import { ArrowLeft, FileText, CheckCircle2, AlertTriangle, ShieldCheck, HelpCirc
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Terms and Conditions | ChatDigest',
-  description: 'Review terms of use, acceptable use policy, and subscription agreements for ChatDigest.',
+  title: 'Terms of Service & Subscription Agreements',
+  description: 'Review terms of use, acceptable use policy, and Flutterwave subscription agreements for ChatDigest in Nigeria.',
+  alternates: {
+    canonical: 'https://www.chatdigest.site/terms',
+  },
 };
 
 export default function TermsPage() {

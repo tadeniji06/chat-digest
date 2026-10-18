@@ -6,8 +6,11 @@ import { ArrowLeft, Cookie, Shield, Check, Info, Settings } from 'lucide-react';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Cookie Policy | ChatDigest',
-  description: 'Learn how ChatDigest uses essential and performance cookies to provide secure WhatsApp group summaries.',
+  title: 'Cookie Policy & Consent Settings',
+  description: 'Learn how ChatDigest uses essential and performance cookies to provide secure WhatsApp group summaries in Nigeria.',
+  alternates: {
+    canonical: 'https://www.chatdigest.site/cookies',
+  },
 };
 
 export default function CookiesPage() {

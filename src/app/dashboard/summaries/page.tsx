@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AISummary, MonitoredGroup, TopicDiscussed, SpeakerPoint } from '@/types';
+import { getUserFriendlyError } from '@/utils/errors';
 
 export default function SummariesPage() {
   const [summaries, setSummaries] = useState<AISummary[]>([]);
@@ -81,15 +82,14 @@ export default function SummariesPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        toast.error(data.error || 'Failed to generate summary');
+        toast.error(getUserFriendlyError(data.error, 'Unable to generate summary right now. Please try again in a few moments.'));
         return;
       }
 
       toast.success(`Generated executive summary for "${groupName}"`);
       setSummaries((prev) => [data.summary, ...prev]);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Error generating summary';
-      toast.error(message);
+      toast.error(getUserFriendlyError(err, 'Summary generation is taking longer than usual. Please try again shortly.'));
     } finally {
       setGenerating(false);
     }
@@ -171,7 +171,7 @@ export default function SummariesPage() {
               {generating ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Synthesizing Chat with Gemini...</span>
+                  <span>Synthesizing Chat with AI...</span>
                 </>
               ) : (
                 <>

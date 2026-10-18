@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { Check, Loader2, ShieldCheck, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { SubscriptionTier, PLAN_LIMITS } from '@/types';
+import { getUserFriendlyError } from '@/utils/errors';
 
 import { createClient } from '@/utils/supabase/client';
 
@@ -80,10 +81,10 @@ function SubscriptionContent() {
           toast.success('Switched to Free Plan successfully!');
           window.location.reload();
         } else {
-          toast.error(data.error || 'Failed to switch to Free plan');
+          toast.error(getUserFriendlyError(data.error, 'Unable to switch plan right now. Please try again.'));
         }
-      } catch (err: unknown) {
-        toast.error('Network error switching plan');
+      } catch {
+        toast.error('Unable to switch plan right now. Please check your internet connection.');
       } finally {
         setLoadingTier(null);
       }
@@ -101,7 +102,7 @@ function SubscriptionContent() {
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || 'Failed to start payment checkout');
+        toast.error(getUserFriendlyError(data.error, 'Unable to initialize checkout. Please try again shortly.'));
         return;
       }
 
@@ -110,8 +111,7 @@ function SubscriptionContent() {
         window.location.href = data.link;
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Error connecting to payment gateway';
-      toast.error(message);
+      toast.error(getUserFriendlyError(err, 'Payment service is temporarily busy. Please try again in a few moments.'));
     } finally {
       setLoadingTier(null);
     }

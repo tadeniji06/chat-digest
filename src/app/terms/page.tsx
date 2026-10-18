@@ -113,11 +113,12 @@ export default function TermsPage() {
               <span className="text-emerald-600">4.</span> Subscriptions, Billing &amp; Cancellations
             </h2>
             <p className="text-gray-700">
-              ChatDigest offers Free, Pro, and Max subscription tiers with varying features, group limits, and AI summary capabilities.
+              ChatDigest offers Free, Basic, Pro, Max, and Enterprise subscription tiers with varying features, group limits, and AI summary capabilities.
             </p>
             <ul className="list-disc pl-5 space-y-1.5 text-gray-700">
-              <li><strong>Billing Cycle:</strong> Paid plans are billed periodically (e.g. monthly or yearly) in advance via Flutterwave.</li>
-              <li><strong>Tier Limits:</strong> Free users can monitor up to 1 group with keyword alerts. Pro users can monitor up to 3 groups with AI summaries. Max users can monitor up to 10 groups with unlimited on-demand digests.</li>
+              <li><strong>Billing Cycle:</strong> Paid plans are billed every 30 days in advance via Flutterwave in Nigerian Naira (NGN).</li>
+              <li><strong>Tier Limits:</strong> Free users can monitor 1 group (2 keywords, 1 summary lifetime). Basic users monitor up to 3 groups (2 keywords/group, 1 summary/day). Pro users monitor up to 6 groups (3 keywords/group, 3 summaries/day). Max users monitor up to 10 groups (4 keywords/group, 5 summaries/day). Enterprise users monitor up to 20 groups (10 keywords/group, 10 summaries/day).</li>
+              <li><strong>30-Day Expiration:</strong> Subscriptions remain active for exactly 30 days from confirmation. After expiry, access automatically defaults to Free tier features until renewed.</li>
               <li><strong>Refunds:</strong> Because AI inference consumes non-recoverable compute cycles, subscription fees are non-refundable once the billing period has commenced, except where mandated by local consumer law.</li>
               <li><strong>Cancellation:</strong> You may cancel or change your plan at any time in the Subscription Dashboard. Your tier perks remain active until the end of your billing cycle.</li>
             </ul>

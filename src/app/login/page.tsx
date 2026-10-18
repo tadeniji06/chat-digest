@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { ArrowRight, Lock, Mail, AlertCircle } from 'lucide-react';
+import { getUserFriendlyError } from '@/utils/errors';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -27,7 +28,7 @@ export default function LoginPage() {
     });
 
     if (error) {
-      setErrorMsg(error.message);
+      setErrorMsg(getUserFriendlyError(error, 'Incorrect email or password. Please try again.'));
       setLoading(false);
       return;
     }
@@ -49,7 +50,7 @@ export default function LoginPage() {
     });
 
     if (error) {
-      setErrorMsg(error.message);
+      setErrorMsg(getUserFriendlyError(error, 'Google sign-in could not be completed. Please try again.'));
       setGoogleLoading(false);
     }
   };

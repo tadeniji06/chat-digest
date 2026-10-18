@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { ArrowRight, Lock, Mail, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { getUserFriendlyError } from '@/utils/errors';
 
 export default function SignupPage() {
   const router = useRouter();
@@ -38,7 +39,7 @@ export default function SignupPage() {
     });
 
     if (error) {
-      setErrorMsg(error.message);
+      setErrorMsg(getUserFriendlyError(error, 'Unable to create your account. Please check your details and try again.'));
       setLoading(false);
       return;
     }
@@ -66,7 +67,7 @@ export default function SignupPage() {
     });
 
     if (error) {
-      setErrorMsg(error.message);
+      setErrorMsg(getUserFriendlyError(error, 'Google registration could not be completed. Please try again.'));
       setGoogleLoading(false);
     }
   };

@@ -17,6 +17,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { getUserFriendlyError } from '@/utils/errors';
 
 export default function WhatsAppConnectPage() {
   const [session, setSession] = useState<any>(null);
@@ -131,7 +132,7 @@ export default function WhatsAppConnectPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        toast.error(data.error || 'Failed to generate pairing code');
+        toast.error(getUserFriendlyError(data.error, 'Could not generate pairing code. Please try again.'));
         return;
       }
 
@@ -141,8 +142,7 @@ export default function WhatsAppConnectPage() {
       }
       checkStatus();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Error requesting pairing code';
-      toast.error(message);
+      toast.error(getUserFriendlyError(err, 'Connection timed out. Please click "Generate New Code" and enter it in WhatsApp.'));
     } finally {
       setRequestingCode(false);
     }

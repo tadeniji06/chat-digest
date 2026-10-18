@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { SubscriptionTier, PLAN_LIMITS } from '@/types';
+import { getUserFriendlyError } from '@/utils/errors';
 
 interface GroupItem {
   id: string;
@@ -44,8 +45,7 @@ export default function MonitoredGroupsPage() {
         }
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch groups';
-      toast.error(message);
+      toast.error(getUserFriendlyError(err, 'Unable to load groups right now. Please refresh the page.'));
     } finally {
       setLoading(false);
     }
@@ -87,7 +87,7 @@ export default function MonitoredGroupsPage() {
         });
         const resData = await res.json();
         if (!res.ok) {
-          toast.error(resData.error || 'Failed to monitor group');
+          toast.error(getUserFriendlyError(resData.error, 'Unable to monitor this group. Please try again.'));
           return;
         }
       } else {
@@ -95,7 +95,7 @@ export default function MonitoredGroupsPage() {
           method: 'DELETE',
         });
         if (!res.ok) {
-          toast.error('Failed to unmonitor group');
+          toast.error('Unable to unmonitor group. Please try again.');
           return;
         }
       }
@@ -120,8 +120,7 @@ export default function MonitoredGroupsPage() {
           : `Stopped monitoring "${group.name}"`
       );
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Error updating monitoring';
-      toast.error(message);
+      toast.error(getUserFriendlyError(err, 'Unable to update group monitoring. Please try again.'));
     }
   };
 

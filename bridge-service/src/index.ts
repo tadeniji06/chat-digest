@@ -86,6 +86,7 @@ interface IngestedMessage {
 
 interface ActiveSession {
   userId: string;
+  userEmail?: string;
   socket: any;
   qr: string | null;
   pairingCode?: string | null;
@@ -298,42 +299,96 @@ async function startWhatsAppSession(userId: string): Promise<ActiveSession> {
           }
 
           if (!sessionMeta.welcome_sent) {
-            // Determine tier
+            // 1. Determine user email
+            let resolvedEmail = sessionObj.userEmail || sessionMeta.user_email || null;
+            let dbTier = 'free';
+
+            try {
+              const { data: userProfile } = await supabase
+                .from('users')
+                .select('subscription_tier, email')
+                .eq('id', userId)
+                .maybeSingle();
+
+              if (userProfile?.subscription_tier) {
+                dbTier = userProfile.subscription_tier;
+              }
+              if (!resolvedEmail && userProfile?.email) {
+                resolvedEmail = userProfile.email;
+              }
+            } catch {}
+
+            // 2. If email still not found, check auth.users directly
+            if (!resolvedEmail) {
+              try {
+                const { data: authUser } = await supabase.auth.admin.getUserById(userId);
+                if (authUser?.user?.email) {
+                  resolvedEmail = authUser.user.email;
+                  if (authUser.user.user_metadata?.subscription_tier) {
+                    dbTier = authUser.user.user_metadata.subscription_tier;
+                  }
+                }
+              } catch {}
+            }
+
+            // 3. Reconcile with live Flutterwave payments if still resolving to free
+            let resolvedTier = dbTier;
+            if (resolvedTier === 'free' && resolvedEmail) {
+              try {
+                const flwSecret = process.env.FLUTTERWAVE_SECRET_KEY || 'FLWSECK-1e8a9756e3101a8eacead3470be58ee3-1a14ebc76c0vt-X';
+                const flwRes = await fetch(
+                  `https://api.flutterwave.com/v3/transactions?customer_email=${encodeURIComponent(resolvedEmail)}&status=successful`,
+                  {
+                    headers: { Authorization: `Bearer ${flwSecret}` },
+                  }
+                );
+                if (flwRes.ok) {
+                  const flwData = await flwRes.json();
+                  if (flwData.status === 'success' && Array.isArray(flwData.data)) {
+                    const validTx = flwData.data.find((tx: any) => {
+                      if (tx.status !== 'successful') return false;
+                      const txDate = new Date(tx.created_at).getTime();
+                      return Date.now() - txDate < 30 * 24 * 60 * 60 * 1000;
+                    });
+                    if (validTx) {
+                      const detected = validTx.meta?.tier || 'basic';
+                      resolvedTier = detected;
+                      logger.info(`[Welcome Message] Reconciled live Flutterwave payment for ${resolvedEmail}: Tier is ${detected}`);
+                    }
+                  }
+                }
+              } catch (flwErr) {
+                logger.warn(`[Welcome Message] FLW check error: ${flwErr}`);
+              }
+            }
+
+            // 4. Set accurate plan presentation
             let tierName = 'Free';
             let maxGroups = 1;
             let keywordsCount = 2;
             let summaryInfo = '1 AI summary lifetime';
 
-            try {
-              const { data: userProfile } = await supabase
-                .from('users')
-                .select('subscription_tier')
-                .eq('id', userId)
-                .maybeSingle();
-
-              const tier = userProfile?.subscription_tier || 'free';
-              if (tier === 'basic') {
-                tierName = 'Basic (₦2,000/mo)';
-                maxGroups = 3;
-                keywordsCount = 2;
-                summaryInfo = '1 AI summary per day';
-              } else if (tier === 'pro') {
-                tierName = 'Pro (₦5,000/mo)';
-                maxGroups = 6;
-                keywordsCount = 3;
-                summaryInfo = '3 AI summaries per day';
-              } else if (tier === 'max') {
-                tierName = 'Max (₦10,000/mo)';
-                maxGroups = 10;
-                keywordsCount = 4;
-                summaryInfo = '5 AI summaries per day';
-              } else if (tier === 'enterprise') {
-                tierName = 'Enterprise (₦50,000/mo)';
-                maxGroups = 20;
-                keywordsCount = 10;
-                summaryInfo = '10 AI summaries per day';
-              }
-            } catch {}
+            if (resolvedTier === 'basic') {
+              tierName = 'Basic (₦2,000/mo)';
+              maxGroups = 3;
+              keywordsCount = 2;
+              summaryInfo = '1 AI summary per day';
+            } else if (resolvedTier === 'pro') {
+              tierName = 'Pro (₦5,000/mo)';
+              maxGroups = 6;
+              keywordsCount = 3;
+              summaryInfo = '3 AI summaries per day';
+            } else if (resolvedTier === 'max') {
+              tierName = 'Max (₦10,000/mo)';
+              maxGroups = 10;
+              keywordsCount = 4;
+              summaryInfo = '5 AI summaries per day';
+            } else if (resolvedTier === 'enterprise') {
+              tierName = 'Enterprise (₦50,000/mo)';
+              maxGroups = 20;
+              keywordsCount = 10;
+              summaryInfo = '10 AI summaries per day';
+            }
 
             const welcomeText = 
 `👋 *Welcome to ChatDigest!*
@@ -559,13 +614,27 @@ To read the entire conversation context and run AI summaries, view your dashboar
 
 // 1. Start new session (generates QR)
 app.post('/api/session/start', async (req, res) => {
-  const { userId } = req.body;
+  const { userId, userEmail } = req.body;
   if (!userId) {
     return res.status(400).json({ error: 'userId is required' });
   }
 
   try {
     const session = await startWhatsAppSession(userId);
+    if (userEmail) {
+      session.userEmail = userEmail;
+      try {
+        const userSessionDir = path.join(SESSIONS_DIR, userId);
+        const metaFile = path.join(userSessionDir, 'session_meta.json');
+        let currentMeta: any = {};
+        if (fs.existsSync(metaFile)) {
+          try { currentMeta = JSON.parse(fs.readFileSync(metaFile, 'utf-8')); } catch {}
+        }
+        currentMeta.user_email = userEmail;
+        fs.writeFileSync(metaFile, JSON.stringify(currentMeta, null, 2));
+      } catch {}
+    }
+
     return res.json({
       status: session.status,
       qr: session.qr,
@@ -579,7 +648,7 @@ app.post('/api/session/start', async (req, res) => {
 
 // 1b. Request 8-digit Pairing Code for Single-Device linking
 app.post('/api/session/pairing-code', async (req, res) => {
-  const { userId, phoneNumber } = req.body;
+  const { userId, userEmail, phoneNumber } = req.body;
   if (!userId || !phoneNumber) {
     return res.status(400).json({ error: 'userId and phoneNumber are required' });
   }
@@ -603,6 +672,20 @@ app.post('/api/session/pairing-code', async (req, res) => {
         }
       } catch {}
       session = await startWhatsAppSession(userId);
+    }
+
+    if (userEmail) {
+      session.userEmail = userEmail;
+      try {
+        const userSessionDir = path.join(SESSIONS_DIR, userId);
+        const metaFile = path.join(userSessionDir, 'session_meta.json');
+        let currentMeta: any = {};
+        if (fs.existsSync(metaFile)) {
+          try { currentMeta = JSON.parse(fs.readFileSync(metaFile, 'utf-8')); } catch {}
+        }
+        currentMeta.user_email = userEmail;
+        fs.writeFileSync(metaFile, JSON.stringify(currentMeta, null, 2));
+      } catch {}
     }
 
     if (!session.socket) {

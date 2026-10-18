@@ -98,7 +98,7 @@ export async function POST(request: Request) {
       const res = await fetch(`${BRIDGE_URL}/api/session/pairing-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, phoneNumber }),
+        body: JSON.stringify({ userId: user.id, userEmail: user.email, phoneNumber }),
       });
 
       if (!res.ok) {
@@ -117,7 +117,7 @@ export async function POST(request: Request) {
     const res = await fetch(`${BRIDGE_URL}/api/session/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: user.id }),
+      body: JSON.stringify({ userId: user.id, userEmail: user.email }),
     });
 
     if (!res.ok) {

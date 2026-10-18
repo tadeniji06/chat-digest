@@ -503,7 +503,7 @@ export default function WhatsAppConnectPage() {
             <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto mb-2" />
             <h3 className="text-base font-bold text-gray-900">Your WhatsApp is active!</h3>
             <p className="text-xs text-gray-600 max-w-md mx-auto mt-1">
-              The Baileys bridge service is listening for group messages and keyword triggers.
+              The ChatDigest bridge service is listening for group messages and keyword triggers.
             </p>
             <div className="mt-4 flex justify-center gap-3">
               <Link

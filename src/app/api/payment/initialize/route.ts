@@ -28,29 +28,48 @@ export async function POST(request: Request) {
     console.log('[Payment Initialize] Requested tier:', tier);
 
     const paidTiers: SubscriptionTier[] = ['basic', 'pro', 'max', 'enterprise'];
+    const tierRanks: Record<SubscriptionTier, number> = {
+      free: 0,
+      basic: 1,
+      pro: 2,
+      max: 3,
+      enterprise: 4,
+    };
 
+    // Determine current user tier and expiry
+    const { data: userProfile } = await supabase
+      .from('users')
+      .select('subscription_tier, subscription_expires_at')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    const currentTier = (userProfile?.subscription_tier || user.user_metadata?.subscription_tier || 'free') as SubscriptionTier;
+    const expiresAt = userProfile?.subscription_expires_at || user.user_metadata?.subscription_expires_at;
+    const isCurrentActive = currentTier !== 'free' && expiresAt ? new Date(expiresAt).getTime() > Date.now() : false;
+
+    // Disallow switching to free or downgrading while on an active plan
     if (tier === 'free') {
-      // Free tier doesn't require payment; activate immediately for user
-      const expiresAt = new Date(Date.now() + 365 * 10 * 24 * 60 * 60 * 1000).toISOString();
-      await supabase.from('users').upsert({
-        id: user.id,
-        email: user.email || 'customer@chatdigest.app',
-        subscription_tier: 'free',
-        payment_status: 'active',
-        subscription_expires_at: expiresAt,
-      });
-      await supabase.auth.updateUser({
-        data: {
-          subscription_tier: 'free',
-          payment_status: 'active',
-          subscription_expires_at: expiresAt,
-        },
-      });
-      return NextResponse.json({ success: true, activatedFree: true });
+      if (currentTier === 'free') {
+        return NextResponse.json({ error: 'You are already on the Free plan.' }, { status: 400 });
+      }
+      return NextResponse.json(
+        { error: 'Downgrades are not supported. Your current plan remains active until the end of your billing cycle.' },
+        { status: 400 }
+      );
     }
 
     if (!tier || !paidTiers.includes(tier as SubscriptionTier)) {
       return NextResponse.json({ error: 'Invalid plan selected' }, { status: 400 });
+    }
+
+    // Check for downgrade attempt
+    if (isCurrentActive && tierRanks[tier as SubscriptionTier] < tierRanks[currentTier]) {
+      return NextResponse.json(
+        {
+          error: `Downgrading from ${PLAN_LIMITS[currentTier]?.name} to ${PLAN_LIMITS[tier as SubscriptionTier]?.name} is not allowed. You can only upgrade your plan.`,
+        },
+        { status: 400 }
+      );
     }
 
     const selectedPlan = PLAN_LIMITS[tier as SubscriptionTier];

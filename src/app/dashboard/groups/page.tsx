@@ -12,6 +12,7 @@ import {
 import { toast } from 'sonner';
 import { SubscriptionTier, PLAN_LIMITS } from '@/types';
 import { getUserFriendlyError } from '@/utils/errors';
+import { useSubscriptionStore } from '@/store/useSubscriptionStore';
 
 interface GroupItem {
   id: string;
@@ -23,12 +24,14 @@ interface GroupItem {
 export default function MonitoredGroupsPage() {
   const [groups, setGroups] = useState<GroupItem[]>([]);
   const [monitoredCount, setMonitoredCount] = useState(0);
-  const [tier, setTier] = useState<SubscriptionTier>('free');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'monitored' | 'all'>('monitored');
   const [searchTerm, setSearchTerm] = useState('');
   const [editingJid, setEditingJid] = useState<string | null>(null);
   const [keywordInput, setKeywordInput] = useState('');
+
+  // Global Zustand subscription store
+  const { tier, plan, fetchTier } = useSubscriptionStore();
 
   const fetchGroups = async () => {
     setLoading(true);
@@ -53,15 +56,8 @@ export default function MonitoredGroupsPage() {
 
   useEffect(() => {
     fetchGroups();
-    fetch('/api/user/tier')
-      .then((r) => r.json())
-      .then((d) => {
-        if (d?.tier) setTier(d.tier as SubscriptionTier);
-      })
-      .catch(() => {});
-  }, []);
-
-  const plan = PLAN_LIMITS[tier] || PLAN_LIMITS.free;
+    fetchTier();
+  }, [fetchTier]);
 
   const handleToggleMonitor = async (group: GroupItem) => {
     const willMonitor = !group.isMonitored;

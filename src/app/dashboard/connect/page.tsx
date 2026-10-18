@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import QRCode from 'qrcode';
 import {
   QrCode,
@@ -505,12 +506,13 @@ export default function WhatsAppConnectPage() {
               The Baileys bridge service is listening for group messages and keyword triggers.
             </p>
             <div className="mt-4 flex justify-center gap-3">
-              <a
+              <Link
                 href="/dashboard/groups"
-                className="px-4 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-sm"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-sm"
               >
-                Choose Groups to Monitor &rarr;
-              </a>
+                <span>Choose Groups to Monitor</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
             </div>
           </div>
         )}

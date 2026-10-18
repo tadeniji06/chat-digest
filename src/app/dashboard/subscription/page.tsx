@@ -6,56 +6,41 @@ import { Check, Loader2, ShieldCheck, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { SubscriptionTier, PLAN_LIMITS } from '@/types';
 import { getUserFriendlyError } from '@/utils/errors';
+import { useSubscriptionStore } from '@/store/useSubscriptionStore';
 
 import { createClient } from '@/utils/supabase/client';
 
 function SubscriptionContent() {
   const searchParams = useSearchParams();
-  const [currentTier, setCurrentTier] = useState<SubscriptionTier>('free');
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
-  const [expiresAt, setExpiresAt] = useState<string | null>(null);
-  const [secondsRemaining, setSecondsRemaining] = useState<number>(0);
-  const [isExpired, setIsExpired] = useState<boolean>(false);
+
+  // Global Zustand subscription store
+  const {
+    tier: currentTier,
+    expiresAt,
+    secondsRemaining,
+    isExpired,
+    fetchTier,
+    decrementTimer,
+  } = useSubscriptionStore();
 
   useEffect(() => {
-    // Fetch accurately resolved tier from server endpoint
-    fetch('/api/user/tier')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data?.tier) {
-          setCurrentTier(data.tier as SubscriptionTier);
-        }
-        if (data?.expiresAt) {
-          setExpiresAt(data.expiresAt);
-        }
-        if (typeof data?.secondsRemaining === 'number') {
-          setSecondsRemaining(data.secondsRemaining);
-        }
-        if (data?.isExpired) {
-          setIsExpired(true);
-        }
-      })
-      .catch((err) => console.error('[Tier fetch error]:', err));
+    fetchTier();
 
     if (searchParams.get('payment') === 'success') {
       toast.success('Your subscription is active! Thank you for subscribing.');
+      fetchTier();
     }
-  }, [searchParams]);
+  }, [searchParams, fetchTier]);
 
-  // Real-time ticking countdown
+  // Real-time ticking countdown via Zustand store
   useEffect(() => {
     if (secondsRemaining <= 0) return;
     const interval = setInterval(() => {
-      setSecondsRemaining((prev) => {
-        if (prev <= 1) {
-          setIsExpired(true);
-          return 0;
-        }
-        return prev - 1;
-      });
+      decrementTimer();
     }, 1000);
     return () => clearInterval(interval);
-  }, [secondsRemaining]);
+  }, [secondsRemaining, decrementTimer]);
 
   const formatCountdown = (totalSeconds: number) => {
     const days = Math.floor(totalSeconds / (3600 * 24));
@@ -65,29 +50,31 @@ function SubscriptionContent() {
     return { days, hours, minutes, seconds };
   };
 
+  const tierRanks: Record<SubscriptionTier, number> = {
+    free: 0,
+    basic: 1,
+    pro: 2,
+    max: 3,
+    enterprise: 4,
+  };
+
   const handleCheckout = async (tier: SubscriptionTier) => {
-    if (tier === 'free') {
-      setLoadingTier('free');
-      try {
-        const res = await fetch('/api/payment/initialize', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tier: 'free' }),
-        });
-        const data = await res.json();
-        if (res.ok) {
-          setCurrentTier('free');
-          setIsExpired(false);
-          toast.success('Switched to Free Plan successfully!');
-          window.location.reload();
-        } else {
-          toast.error(getUserFriendlyError(data.error, 'Unable to switch plan right now. Please try again.'));
-        }
-      } catch {
-        toast.error('Unable to switch plan right now. Please check your internet connection.');
-      } finally {
-        setLoadingTier(null);
+    if (tier === currentTier && !isExpired) {
+      if (tier === 'free') {
+        toast.info('You are currently on the Free plan.');
+        return;
       }
+    }
+
+    if (!isExpired && currentTier !== 'free' && tierRanks[tier] < tierRanks[currentTier]) {
+      toast.error(
+        `Plan downgrades are not supported. Your ${PLAN_LIMITS[currentTier]?.name} plan remains active until expiration.`
+      );
+      return;
+    }
+
+    if (tier === 'free') {
+      toast.info('You are currently on the Free plan.');
       return;
     }
 
@@ -122,13 +109,19 @@ function SubscriptionContent() {
 
   return (
     <div className="space-y-8 max-w-6xl">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
-          Subscription & Plans
-        </h1>
-        <p className="text-sm text-gray-500 mt-0.5">
-          Select or upgrade your WhatsApp monitoring tier with secure Flutterwave checkout
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
+            Subscription & Plans
+          </h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Select or upgrade your WhatsApp monitoring tier with secure Flutterwave checkout
+          </p>
+        </div>
+
+        <div className="px-3.5 py-2 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-900 max-w-md">
+          <span className="font-bold">Upgrade Policy:</span> Plans can be upgraded at any time (charged at the full price of the new tier). Downgrades and refunds are not available once a billing cycle starts.
+        </div>
       </div>
 
       {/* Expiration Countdown Banner / Card */}
@@ -281,33 +274,54 @@ function SubscriptionContent() {
               </div>
 
               <div className="mt-6">
-                <button
-                  onClick={() => handleCheckout(t)}
-                  disabled={loadingTier !== null}
-                  className={`w-full py-2.5 px-3 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 ${
-                    isCurrent
-                      ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      : isPro
-                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white font-bold'
-                      : 'bg-gray-900 hover:bg-gray-800 text-white'
-                  }`}
-                  title={t === 'free' ? 'Switch to free tier' : `Checkout ${plan.name} plan on Flutterwave`}
-                >
-                  {loadingTier === t ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Connecting...</span>
-                    </>
-                  ) : (
-                    <span>
-                      {isCurrent
-                        ? t === 'free' ? 'Current Plan' : 'Renew with Flutterwave'
-                        : t === 'free'
-                        ? 'Select Free'
-                        : `Upgrade to ${plan.name}`}
-                    </span>
-                  )}
-                </button>
+                {(() => {
+                  const isDowngrade = !isExpired && currentTier !== 'free' && tierRanks[t] < tierRanks[currentTier];
+                  const isFreeCurrent = isCurrent && t === 'free';
+                  const isDisabled = loadingTier !== null || isFreeCurrent || isDowngrade;
+
+                  let buttonLabel = `Upgrade to ${plan.name}`;
+                  if (isCurrent) {
+                    buttonLabel = t === 'free' ? 'Current Plan' : 'Renew with Flutterwave';
+                  } else if (isDowngrade) {
+                    buttonLabel = 'Downgrade Unavailable';
+                  } else if (t === 'free') {
+                    buttonLabel = 'Free Plan';
+                  }
+
+                  return (
+                    <button
+                      onClick={() => handleCheckout(t)}
+                      disabled={isDisabled}
+                      className={`w-full py-2.5 px-3 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 ${
+                        isFreeCurrent
+                          ? 'bg-gray-100 text-gray-400 cursor-default border border-gray-200'
+                          : isDowngrade
+                          ? 'bg-gray-50 text-gray-400 cursor-not-allowed border border-dashed border-gray-200'
+                          : isCurrent
+                          ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          : isPro
+                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-sm'
+                          : 'bg-gray-900 hover:bg-gray-800 text-white'
+                      }`}
+                      title={
+                        isDowngrade
+                          ? 'Plan downgrades are not supported. Plans can only be upgraded.'
+                          : isFreeCurrent
+                          ? 'You are already on the Free tier.'
+                          : `Subscribe to ${plan.name} via Flutterwave`
+                      }
+                    >
+                      {loadingTier === t ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Connecting...</span>
+                        </>
+                      ) : (
+                        <span>{buttonLabel}</span>
+                      )}
+                    </button>
+                  );
+                })()}
               </div>
             </div>
           );

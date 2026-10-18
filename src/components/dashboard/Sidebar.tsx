@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
@@ -14,8 +14,10 @@ import {
   LogOut,
   Menu,
   X,
+  ArrowRight,
 } from 'lucide-react';
 import { SubscriptionTier, PLAN_LIMITS } from '@/types';
+import { useSubscriptionStore } from '@/store/useSubscriptionStore';
 
 interface SidebarProps {
   userEmail: string;
@@ -24,31 +26,60 @@ interface SidebarProps {
   expiresAt?: string | null;
 }
 
-export function Sidebar({ userEmail, tier, isExpired, expiresAt }: SidebarProps) {
+export function Sidebar({ userEmail, tier: initialTier, isExpired: initialExpired, expiresAt: initialExpiresAt }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const handleSignOut = async () => {
-    await fetch('/auth/signout', { method: 'POST' });
-    router.push('/login');
-    router.refresh();
-  };
+  // Global Zustand subscription store
+  const { tier: storeTier, isExpired: storeExpired, expiresAt: storeExpiresAt, fetchTier, setTierData } = useSubscriptionStore();
 
   const navItems = [
     { name: 'Overview', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'WhatsApp Connection', href: '/dashboard/connect', icon: QrCode },
+    { name: 'Connect WhatsApp', href: '/dashboard/connect', icon: QrCode },
     { name: 'Monitored Groups', href: '/dashboard/groups', icon: Users2 },
     { name: 'AI Summaries', href: '/dashboard/summaries', icon: FileText },
     { name: 'Keyword Alerts', href: '/dashboard/alerts', icon: Bell },
     { name: 'Subscription & Plans', href: '/dashboard/subscription', icon: CreditCard },
   ];
 
-  const currentPlan = PLAN_LIMITS[tier] || PLAN_LIMITS.free;
+  const handleSignOut = async () => {
+    try {
+      const { createClient } = await import('@/utils/supabase/client');
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      router.push('/login');
+      router.refresh();
+    } catch {
+      router.push('/login');
+    }
+  };
+
+  // Sync initial server-rendered props into Zustand store on mount
+  useEffect(() => {
+    if (initialTier) {
+      setTierData({
+        tier: initialTier,
+        isExpired: initialExpired,
+        expiresAt: initialExpiresAt,
+      });
+    }
+    fetchTier();
+  }, [initialTier, initialExpired, initialExpiresAt, setTierData, fetchTier]);
+
+  // Re-fetch on pathname navigation to maintain synchronized state across all views
+  useEffect(() => {
+    fetchTier();
+  }, [pathname, fetchTier]);
+
+  const currentTier = storeTier || initialTier || 'free';
+  const isExpired = storeExpired;
+  const expiresAt = storeExpiresAt || initialExpiresAt;
+  const currentPlan = PLAN_LIMITS[currentTier] || PLAN_LIMITS.free;
 
   // Calculate days remaining
   let daysRemaining: number | null = null;
-  if (expiresAt && tier !== 'free') {
+  if (expiresAt && currentTier !== 'free') {
     const diff = new Date(expiresAt).getTime() - Date.now();
     if (diff > 0) {
       daysRemaining = Math.ceil(diff / (1000 * 60 * 60 * 24));
@@ -120,14 +151,14 @@ export function Sidebar({ userEmail, tier, isExpired, expiresAt }: SidebarProps)
           <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider ${
             isExpired ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
           }`}>
-            {isExpired ? 'Expired' : tier}
+            {isExpired ? 'Expired' : currentTier}
           </span>
         </div>
         <p className="text-gray-500 text-[11px] leading-relaxed mb-2">
           {currentPlan.maxGroups} group(s) &bull; {currentPlan.keywordsPerGroup} kw/group
         </p>
 
-        {tier !== 'free' && daysRemaining !== null && (
+        {currentTier !== 'free' && daysRemaining !== null && (
           <div className="mb-2.5 px-2 py-1 bg-white rounded border border-gray-200 text-[10px] text-gray-700 flex items-center justify-between">
             <span className="font-medium text-gray-500">Subscription:</span>
             <span className={`font-bold ${daysRemaining <= 3 ? 'text-red-600' : 'text-emerald-700'}`}>
@@ -139,9 +170,10 @@ export function Sidebar({ userEmail, tier, isExpired, expiresAt }: SidebarProps)
         <Link
           href="/dashboard/subscription"
           onClick={() => setMobileOpen(false)}
-          className="inline-block text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 hover:underline"
+          className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 hover:underline"
         >
-          {isExpired ? 'Renew Access &rarr;' : 'Manage / Upgrade &rarr;'}
+          <span>{isExpired ? 'Renew Access' : 'Manage / Upgrade'}</span>
+          <ArrowRight className="w-3.5 h-3.5" />
         </Link>
       </div>
 

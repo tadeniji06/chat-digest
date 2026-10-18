@@ -15,6 +15,7 @@ import {
   Menu,
   X,
   ArrowRight,
+  Bot,
 } from 'lucide-react';
 import { SubscriptionTier, PLAN_LIMITS } from '@/types';
 import { useSubscriptionStore } from '@/store/useSubscriptionStore';

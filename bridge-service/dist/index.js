@@ -24,6 +24,37 @@ if (!fs_1.default.existsSync(SESSIONS_DIR)) {
 const supabaseUrl = process.env.SUPABASE_URL || 'https://bogkfyqaoczlejgaksee.supabase.co';
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
 const supabase = (0, supabase_js_1.createClient)(supabaseUrl, supabaseKey);
+// Dedicated Official Bot Session Identifier
+const SYSTEM_BOT_USER_ID = 'system_official_bot';
+// Helper to send a WhatsApp notification via the Official Bot or fallback to user socket
+async function sendWhatsAppBotNotification(recipientPhoneOrJid, text, userFallbackSession) {
+    try {
+        let targetJid = recipientPhoneOrJid;
+        if (!targetJid.includes('@')) {
+            const cleanPhone = recipientPhoneOrJid.replace(/[^0-9]/g, '');
+            targetJid = `${cleanPhone}@s.whatsapp.net`;
+        }
+        // 1. Try dedicated official bot session if active and connected
+        const botSession = activeSessions.get(SYSTEM_BOT_USER_ID);
+        if (botSession && botSession.status === 'connected' && botSession.socket) {
+            await botSession.socket.sendMessage(targetJid, { text });
+            logger.info(`[Bot Notification] Sent via Official Bot to ${targetJid}`);
+            return true;
+        }
+        // 2. Fallback: if user session provided and connected, send directly to user
+        if (userFallbackSession && userFallbackSession.status === 'connected' && userFallbackSession.socket) {
+            await userFallbackSession.socket.sendMessage(targetJid, { text });
+            logger.info(`[Bot Notification] Sent via User Connected Session to ${targetJid}`);
+            return true;
+        }
+        logger.warn(`[Bot Notification] Could not send message to ${targetJid}. Neither official bot nor user socket connected.`);
+        return false;
+    }
+    catch (err) {
+        logger.error(`[Bot Notification Error] Failed to send message to ${recipientPhoneOrJid}: ${err.message}`);
+        return false;
+    }
+}
 const activeSessions = new Map();
 const logger = (0, pino_1.default)({ level: 'info' });
 // Function to start or restore Baileys connection for a user
@@ -172,6 +203,88 @@ async function startWhatsAppSession(userId) {
                 }, { onConflict: 'user_id' });
             }
             catch { }
+            // Send Welcome Message if not already sent (only for real users, not the system bot)
+            if (userId !== SYSTEM_BOT_USER_ID) {
+                try {
+                    const metaFilePath = path_1.default.join(userSessionDir, 'session_meta.json');
+                    let sessionMeta = {};
+                    if (fs_1.default.existsSync(metaFilePath)) {
+                        try {
+                            sessionMeta = JSON.parse(fs_1.default.readFileSync(metaFilePath, 'utf-8'));
+                        }
+                        catch { }
+                    }
+                    if (!sessionMeta.welcome_sent) {
+                        // Determine tier
+                        let tierName = 'Free';
+                        let maxGroups = 1;
+                        let keywordsCount = 2;
+                        let summaryInfo = '1 AI summary lifetime';
+                        try {
+                            const { data: userProfile } = await supabase
+                                .from('users')
+                                .select('subscription_tier')
+                                .eq('id', userId)
+                                .maybeSingle();
+                            const tier = userProfile?.subscription_tier || 'free';
+                            if (tier === 'basic') {
+                                tierName = 'Basic (₦2,000/mo)';
+                                maxGroups = 3;
+                                keywordsCount = 2;
+                                summaryInfo = '1 AI summary per day';
+                            }
+                            else if (tier === 'pro') {
+                                tierName = 'Pro (₦5,000/mo)';
+                                maxGroups = 6;
+                                keywordsCount = 3;
+                                summaryInfo = '3 AI summaries per day';
+                            }
+                            else if (tier === 'max') {
+                                tierName = 'Max (₦10,000/mo)';
+                                maxGroups = 10;
+                                keywordsCount = 4;
+                                summaryInfo = '5 AI summaries per day';
+                            }
+                            else if (tier === 'enterprise') {
+                                tierName = 'Enterprise (₦50,000/mo)';
+                                maxGroups = 20;
+                                keywordsCount = 10;
+                                summaryInfo = '10 AI summaries per day';
+                            }
+                        }
+                        catch { }
+                        const welcomeText = `👋 *Welcome to ChatDigest!*
+
+Your WhatsApp session is now actively connected.
+
+📋 *Your Current Plan:* ${tierName}
+• *Monitored Groups Allowance:* Up to ${maxGroups} group(s)
+• *Keywords:* ${keywordsCount} keywords per group
+• *AI Summaries:* ${summaryInfo}
+
+⚡ *What you can do:*
+1. *Keyword Alerts:* When any of your chosen words are mentioned in your monitored groups, you'll receive an instant notification here.
+2. *AI Summaries & Meeting Notes:* Log in to your dashboard to generate concise executive summaries, view action items, and review discussions.
+
+🔗 *Access Dashboard:* https://www.chatdigest.site/dashboard
+💳 *Manage or Upgrade Plan:* https://www.chatdigest.site/dashboard/subscription
+
+_Thank you for choosing ChatDigest!_`;
+                        // Wait 2 seconds to ensure socket handshake is stable
+                        setTimeout(async () => {
+                            const sent = await sendWhatsAppBotNotification(phoneNumber, welcomeText, sessionObj);
+                            if (sent) {
+                                sessionMeta.welcome_sent = true;
+                                sessionMeta.welcome_sent_at = new Date().toISOString();
+                                fs_1.default.writeFileSync(metaFilePath, JSON.stringify(sessionMeta, null, 2));
+                            }
+                        }, 2500);
+                    }
+                }
+                catch (welcomeErr) {
+                    logger.warn(`[${userId}] Failed to send welcome onboarding message: ${welcomeErr}`);
+                }
+            }
         }
     });
     // Message ingestion handler
@@ -320,6 +433,26 @@ async function startWhatsAppSession(userId) {
                         await supabase.from('keyword_alerts').insert(alertRecord);
                     }
                     catch { }
+                    // 4. Send WhatsApp DM Alert to the user (via Official Bot or User fallback)
+                    if (sessionObj.phoneNumber) {
+                        const previewSnippet = messageContent.length > 90
+                            ? `"${messageContent.slice(0, 90)}..."`
+                            : `"${messageContent}"`;
+                        const alertWhatsAppMessage = `🚨 *ChatDigest Keyword Alert!*
+
+📌 *Group:* ${groupTitle}
+👤 *Sender:* ${senderName}
+🔑 *Trigger Word:* \`${kw}\`
+
+💬 *Snippet:* ${previewSnippet}
+
+📊 *Full Context & AI Digest:*
+To read the entire conversation context and run AI summaries, view your dashboard:
+👉 https://www.chatdigest.site/dashboard/alerts`;
+                        sendWhatsAppBotNotification(sessionObj.phoneNumber, alertWhatsAppMessage, sessionObj).catch((e) => {
+                            logger.warn(`Failed to send WhatsApp alert to ${sessionObj.phoneNumber}: ${e}`);
+                        });
+                    }
                 }
             }
         }
@@ -639,13 +772,60 @@ setInterval(async () => {
         // Background polling catch
     }
 }, 30000);
-app.get('/health', (req, res) => {
-    res.json({
-        status: 'healthy',
-        activeSessionsCount: activeSessions.size,
-        timestamp: new Date().toISOString(),
+// 6. Admin Endpoints for Dedicated Official Bot
+app.get('/api/admin/bot/status', async (req, res) => {
+    const botSession = activeSessions.get(SYSTEM_BOT_USER_ID);
+    return res.json({
+        status: botSession ? botSession.status : 'disconnected',
+        phoneNumber: botSession?.phoneNumber || null,
+        pushName: botSession?.pushName || 'Official ChatDigest Bot',
+        hasQr: !!botSession?.qr,
+        qr: botSession?.qr || null,
+        pairingCode: botSession?.pairingCode || null,
     });
 });
+app.post('/api/admin/bot/pair', async (req, res) => {
+    const { phoneNumber } = req.body;
+    if (!phoneNumber) {
+        return res.status(400).json({ error: 'Phone number is required' });
+    }
+    try {
+        const session = await startWhatsAppSession(SYSTEM_BOT_USER_ID);
+        const cleanNumber = phoneNumber.replace(/[^0-9]/g, '');
+        // Allow socket 2.5s to initialize before requesting pairing code
+        setTimeout(async () => {
+            try {
+                if (session.socket && session.status !== 'connected') {
+                    const code = await session.socket.requestPairingCode(cleanNumber);
+                    session.pairingCode = code;
+                    logger.info(`[Official Bot] Generated pairing code: ${code} for phone: ${cleanNumber}`);
+                }
+            }
+            catch (err) {
+                logger.error(`[Official Bot] Pairing code generation failed: ${err.message}`);
+            }
+        }, 2500);
+        return res.json({
+            message: 'Pairing requested. Check /api/admin/bot/status in 3 seconds for your 8-digit code.',
+        });
+    }
+    catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+// Auto-restore Official Bot if session directory exists on startup
+setTimeout(async () => {
+    const botSessionDir = path_1.default.join(SESSIONS_DIR, SYSTEM_BOT_USER_ID);
+    if (fs_1.default.existsSync(botSessionDir)) {
+        try {
+            logger.info('Auto-restoring Official Bot WhatsApp session...');
+            await startWhatsAppSession(SYSTEM_BOT_USER_ID);
+        }
+        catch (err) {
+            logger.warn(`Could not auto-restore official bot session: ${err}`);
+        }
+    }
+}, 3000);
 app.listen(PORT, () => {
     logger.info(`WhatsApp Baileys Bridge Service listening on port ${PORT}`);
 });

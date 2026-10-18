@@ -5,11 +5,19 @@
   --foreground: #0f172a;
 }
 
+html {
+  font-size: 17.5px;
+  letter-spacing: 0.02em;
+}
+
 body {
   background-color: #f8fafc;
   color: #0f172a;
   font-family: var(--font-barlow-condensed), "Barlow Condensed", sans-serif;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+  letter-spacing: 0.018em;
 }
 
 /* Barlow Condensed Helper Classes */

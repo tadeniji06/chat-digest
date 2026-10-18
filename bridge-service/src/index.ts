@@ -195,10 +195,14 @@ async function startWhatsAppSession(userId: string): Promise<ActiveSession> {
     auth: state,
     printQRInTerminal: false,
     logger: pino({ level: 'silent' }),
-    browser: Browsers.ubuntu('Chrome'),
+    browser: Browsers.macOS('Desktop'),
     connectTimeoutMs: 60000,
-    keepAliveIntervalMs: 25000,
+    keepAliveIntervalMs: 30000,
+    defaultQueryTimeoutMs: 60000,
+    retryRequestDelayMs: 250,
     emitOwnEvents: false,
+    markOnlineOnConnect: true,
+    syncFullHistory: false,
   });
 
   sessionObj.socket = sock;
@@ -228,8 +232,8 @@ async function startWhatsAppSession(userId: string): Promise<ActiveSession> {
 
     if (connection === 'close') {
       const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      logger.warn(`[${userId}] Connection closed. Reason: ${statusCode}, Reconnecting: ${shouldReconnect}`);
+      const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+      logger.warn(`[${userId}] Connection closed. Reason: ${statusCode}, LoggedOut: ${isLoggedOut}`);
 
       sessionObj.status = 'disconnected';
       sessionObj.qr = null;
@@ -244,12 +248,18 @@ async function startWhatsAppSession(userId: string): Promise<ActiveSession> {
         );
       } catch {}
 
-      if (shouldReconnect) {
-        startWhatsAppSession(userId);
-      } else {
-        // Logged out: remove session folder
+      // If genuinely logged out by user action, clear session
+      if (isLoggedOut) {
+        logger.info(`[${userId}] User officially logged out. Clearing credentials.`);
         fs.rmSync(userSessionDir, { recursive: true, force: true });
         activeSessions.delete(userId);
+      } else {
+        // Automatic reconnection for 408, 515, transient network resets
+        const delay = statusCode === 408 ? 5000 : 3000;
+        logger.info(`[${userId}] Scheduling automatic reconnection in ${delay}ms...`);
+        setTimeout(() => {
+          startWhatsAppSession(userId);
+        }, delay);
       }
     } else if (connection === 'open') {
       logger.info(`[${userId}] WhatsApp successfully connected!`);

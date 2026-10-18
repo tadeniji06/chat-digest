@@ -139,10 +139,14 @@ async function startWhatsAppSession(userId) {
         auth: state,
         printQRInTerminal: false,
         logger: (0, pino_1.default)({ level: 'silent' }),
-        browser: baileys_1.Browsers.ubuntu('Chrome'),
+        browser: baileys_1.Browsers.macOS('Desktop'),
         connectTimeoutMs: 60000,
-        keepAliveIntervalMs: 25000,
+        keepAliveIntervalMs: 30000,
+        defaultQueryTimeoutMs: 60000,
+        retryRequestDelayMs: 250,
         emitOwnEvents: false,
+        markOnlineOnConnect: true,
+        syncFullHistory: false,
     });
     sessionObj.socket = sock;
     // Credential update handler
@@ -164,8 +168,8 @@ async function startWhatsAppSession(userId) {
         }
         if (connection === 'close') {
             const statusCode = lastDisconnect?.error?.output?.statusCode;
-            const shouldReconnect = statusCode !== baileys_1.DisconnectReason.loggedOut;
-            logger.warn(`[${userId}] Connection closed. Reason: ${statusCode}, Reconnecting: ${shouldReconnect}`);
+            const isLoggedOut = statusCode === baileys_1.DisconnectReason.loggedOut;
+            logger.warn(`[${userId}] Connection closed. Reason: ${statusCode}, LoggedOut: ${isLoggedOut}`);
             sessionObj.status = 'disconnected';
             sessionObj.qr = null;
             try {
@@ -175,13 +179,19 @@ async function startWhatsAppSession(userId) {
                 }, { onConflict: 'user_id' });
             }
             catch { }
-            if (shouldReconnect) {
-                startWhatsAppSession(userId);
-            }
-            else {
-                // Logged out: remove session folder
+            // If genuinely logged out by user action, clear session
+            if (isLoggedOut) {
+                logger.info(`[${userId}] User officially logged out. Clearing credentials.`);
                 fs_1.default.rmSync(userSessionDir, { recursive: true, force: true });
                 activeSessions.delete(userId);
+            }
+            else {
+                // Automatic reconnection for 408, 515, transient network resets
+                const delay = statusCode === 408 ? 5000 : 3000;
+                logger.info(`[${userId}] Scheduling automatic reconnection in ${delay}ms...`);
+                setTimeout(() => {
+                    startWhatsAppSession(userId);
+                }, delay);
             }
         }
         else if (connection === 'open') {

@@ -46,9 +46,50 @@ export default async function DashboardLayout({
   const metadataPayment = user.user_metadata?.payment_status;
   const metadataExpiresAt = user.user_metadata?.subscription_expires_at;
 
-  const rawTier = (userProfile?.subscription_tier || metadataTier || cookieTier || 'free') as SubscriptionTier;
-  const paymentStatus = userProfile?.payment_status || metadataPayment || (cookiePaid ? 'active' : null) || (rawTier === 'free' ? 'active' : 'unpaid');
-  const expiresAt = userProfile?.subscription_expires_at || metadataExpiresAt || null;
+  // 4. Flutterwave Direct Reconciliation Fallback
+  let flwTier: SubscriptionTier | null = null;
+  let flwExpiresAt: string | null = null;
+  let flwPayment: string | null = null;
+
+  const currentResolved = userProfile?.subscription_tier || metadataTier || cookieTier;
+  if (!currentResolved || currentResolved === 'free') {
+    try {
+      const flwSecret = process.env.FLUTTERWAVE_SECRET_KEY;
+      if (flwSecret && user.email) {
+        const flwRes = await fetch(
+          `https://api.flutterwave.com/v3/transactions?customer_email=${encodeURIComponent(user.email)}&status=successful`,
+          {
+            headers: { Authorization: `Bearer ${flwSecret}` },
+            next: { revalidate: 60 },
+          }
+        );
+        if (flwRes.ok) {
+          const flwData = await flwRes.json();
+          if (flwData.status === 'success' && Array.isArray(flwData.data) && flwData.data.length > 0) {
+            const validTx = flwData.data.find((tx: any) => {
+              if (tx.status !== 'successful') return false;
+              const txDate = new Date(tx.created_at).getTime();
+              return Date.now() - txDate < 30 * 24 * 60 * 60 * 1000;
+            });
+            if (validTx) {
+              const detectedTier = (validTx.meta?.tier || 'basic') as SubscriptionTier;
+              if (validTiers.includes(detectedTier)) {
+                flwTier = detectedTier;
+                flwExpiresAt = new Date(new Date(validTx.created_at).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+                flwPayment = 'active';
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Non-blocking
+    }
+  }
+
+  const rawTier = (flwTier || userProfile?.subscription_tier || metadataTier || cookieTier || 'free') as SubscriptionTier;
+  const paymentStatus = flwPayment || userProfile?.payment_status || metadataPayment || (cookiePaid ? 'active' : null) || (rawTier === 'free' ? 'active' : 'unpaid');
+  const expiresAt = flwExpiresAt || userProfile?.subscription_expires_at || metadataExpiresAt || null;
 
   // Check 30-day expiration for paid subscriptions
   let isExpired = false;

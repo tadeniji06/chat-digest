@@ -144,13 +144,52 @@ export default async function DashboardPage() {
     }
   }
 
+  // Flutterwave direct reconciliation fallback
+  let flwTier: SubscriptionTier | null = null;
+  let flwExpiresAt: string | null = null;
+  const currentInitial = profileRes.data?.subscription_tier || user?.user_metadata?.subscription_tier || cookieTier;
+  if (!currentInitial || currentInitial === 'free') {
+    try {
+      const flwSecret = process.env.FLUTTERWAVE_SECRET_KEY;
+      if (flwSecret && user?.email) {
+        const flwRes = await fetch(
+          `https://api.flutterwave.com/v3/transactions?customer_email=${encodeURIComponent(user.email)}&status=successful`,
+          {
+            headers: { Authorization: `Bearer ${flwSecret}` },
+            next: { revalidate: 60 },
+          }
+        );
+        if (flwRes.ok) {
+          const flwData = await flwRes.json();
+          if (flwData.status === 'success' && Array.isArray(flwData.data) && flwData.data.length > 0) {
+            const validTx = flwData.data.find((tx: any) => {
+              if (tx.status !== 'successful') return false;
+              const txDate = new Date(tx.created_at).getTime();
+              return Date.now() - txDate < 30 * 24 * 60 * 60 * 1000;
+            });
+            if (validTx) {
+              const detectedTier = (validTx.meta?.tier || 'basic') as SubscriptionTier;
+              if (validTiers.includes(detectedTier)) {
+                flwTier = detectedTier;
+                flwExpiresAt = new Date(new Date(validTx.created_at).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Non-blocking
+    }
+  }
+
   const rawTier =
+    flwTier ||
     profileRes.data?.subscription_tier ||
     user?.user_metadata?.subscription_tier ||
     cookieTier ||
     'free';
 
-  const expiresAt = profileRes.data?.subscription_expires_at || user?.user_metadata?.subscription_expires_at;
+  const expiresAt = flwExpiresAt || profileRes.data?.subscription_expires_at || user?.user_metadata?.subscription_expires_at;
   const isExpired = rawTier !== 'free' && expiresAt ? Date.now() > new Date(expiresAt).getTime() : false;
   const resolvedTier: SubscriptionTier = isExpired ? 'free' : (rawTier as SubscriptionTier);
 

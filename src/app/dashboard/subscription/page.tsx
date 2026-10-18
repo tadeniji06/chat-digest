@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Check, Loader2, ShieldCheck, Zap } from 'lucide-react';
+import { Check, Loader2, ShieldCheck, Zap, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { SubscriptionTier, PLAN_LIMITS } from '@/types';
 import { getUserFriendlyError } from '@/utils/errors';
@@ -13,6 +13,7 @@ import { createClient } from '@/utils/supabase/client';
 function SubscriptionContent() {
   const searchParams = useSearchParams();
   const [loadingTier, setLoadingTier] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Global Zustand subscription store
   const {
@@ -107,6 +108,18 @@ function SubscriptionContent() {
   const tiers: SubscriptionTier[] = ['free', 'basic', 'pro', 'max', 'enterprise'];
   const countdown = formatCountdown(secondsRemaining);
 
+  const handleSyncPayment = async () => {
+    setIsSyncing(true);
+    try {
+      await fetchTier();
+      toast.success('Subscription and payment status verified and synchronized!');
+    } catch {
+      toast.error('Could not verify status. Please refresh in a moment.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   return (
     <div className="space-y-8 max-w-6xl">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -119,8 +132,20 @@ function SubscriptionContent() {
           </p>
         </div>
 
-        <div className="px-3.5 py-2 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-900 max-w-md">
-          <span className="font-bold">Upgrade Policy:</span> Plans can be upgraded at any time (charged at the full price of the new tier). Downgrades and refunds are not available once a billing cycle starts.
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleSyncPayment}
+            disabled={isSyncing}
+            className="px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-colors"
+            title="Check live Flutterwave payment records and synchronize subscription across devices"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-emerald-600 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>{isSyncing ? 'Verifying...' : 'Sync Payment Status'}</span>
+          </button>
+
+          <div className="hidden lg:block px-3.5 py-2 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-900 max-w-md">
+            <span className="font-bold">Upgrade Policy:</span> Plans upgrade at full price. Downgrades/refunds are not supported.
+          </div>
         </div>
       </div>
 

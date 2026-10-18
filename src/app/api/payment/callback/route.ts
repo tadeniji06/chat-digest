@@ -43,69 +43,59 @@ export async function GET(request: Request) {
       let userId = verifyData.data.meta?.user_id;
       const tier = (verifyData.data.meta?.tier || 'basic') as string;
 
+      const customerEmail = verifyData.data.customer?.email;
       // Fallback: if user_id was not in meta, get current logged in user
       if (!userId) {
         const { data: authUser } = await supabase.auth.getUser();
         userId = authUser.user?.id;
       }
 
-      console.log('[Flutterwave Success] Updating user subscription:', { userId, tier });
+      console.log('[Flutterwave Success] Updating user subscription:', { userId, customerEmail, tier });
 
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+      // 1. Try updating user in public.users if table exists and authenticated
       if (userId) {
-        const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-        let updateOk = false;
-        // 1. Try updating user in public.users if table exists
         try {
-          const { error: updateErr } = await supabase
+          await supabase
             .from('users')
             .upsert({
               id: userId,
-              email: verifyData.data.customer?.email || 'user@chatdigest.app',
+              email: customerEmail || 'user@chatdigest.app',
               subscription_tier: tier,
               payment_status: 'active',
               subscription_expires_at: expiresAt,
             });
-
-          if (!updateErr) {
-            updateOk = true;
-          } else {
-            console.warn('[Database update note - schema table]:', updateErr.message);
-          }
         } catch (dbErr) {
           console.warn('[Database update catch]:', dbErr);
         }
 
         // 2. Also persist payment status in user_metadata so gating works seamlessly
         try {
-          const { error: metaErr } = await supabase.auth.updateUser({
+          await supabase.auth.updateUser({
             data: {
               subscription_tier: tier,
               payment_status: 'active',
               subscription_expires_at: expiresAt,
             },
           });
-          if (!metaErr) {
-            updateOk = true;
-          } else {
-            console.warn('[auth.updateUser warning]:', metaErr.message);
-          }
         } catch (authErr) {
           console.warn('[auth.updateUser catch]:', authErr);
         }
+      }
 
-        const response = NextResponse.redirect(`${origin}/dashboard?payment=success`);
-        // 3. Set a direct secure HTTP-only active payment cookie as bulletproof session fallback
+      const response = NextResponse.redirect(`${origin}/dashboard/subscription?payment=success`);
+      // 3. Set a direct secure HTTP-only active payment cookie as bulletproof session fallback
+      if (userId) {
         response.cookies.set('cd_sub_active', `${userId}:${tier}:active`, {
           path: '/',
           httpOnly: true,
           sameSite: 'lax',
           maxAge: 30 * 24 * 60 * 60, // 30 days
         });
-
-        return response;
       }
 
-      return NextResponse.redirect(`${origin}/dashboard?payment=success`);
+      return response;
     } else {
       console.error('[Flutterwave Verification failed]:', verifyData);
       return NextResponse.redirect(`${origin}/subscribe?error=verification_failed`);

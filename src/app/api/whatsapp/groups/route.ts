@@ -133,7 +133,35 @@ export async function POST(request: Request) {
       .eq('id', user.id)
       .maybeSingle();
 
-    const expiresAt = userProfile?.subscription_expires_at || user.user_metadata?.subscription_expires_at;
+    let flwTier: SubscriptionTier | null = null;
+    let flwExpiresAt: string | null = null;
+    const currentInitial = cookieTier || userProfile?.subscription_tier || user.user_metadata?.subscription_tier;
+    if (!currentInitial || currentInitial === 'free') {
+      try {
+        const flwSecret = process.env.FLUTTERWAVE_SECRET_KEY;
+        if (flwSecret && user.email) {
+          const flwRes = await fetch(
+            `https://api.flutterwave.com/v3/transactions?customer_email=${encodeURIComponent(user.email)}&status=successful`,
+            { headers: { Authorization: `Bearer ${flwSecret}` } }
+          );
+          if (flwRes.ok) {
+            const flwData = await flwRes.json();
+            const validTx = flwData.data?.find((tx: any) => tx.status === 'successful' && (Date.now() - new Date(tx.created_at).getTime() < 30 * 24 * 60 * 60 * 1000));
+            if (validTx) {
+              const detectedTier = (validTx.meta?.tier || 'basic') as SubscriptionTier;
+              if (validTiers.includes(detectedTier)) {
+                flwTier = detectedTier;
+                flwExpiresAt = new Date(new Date(validTx.created_at).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+              }
+            }
+          }
+        }
+      } catch {
+        // Non-blocking
+      }
+    }
+
+    const expiresAt = flwExpiresAt || userProfile?.subscription_expires_at || user.user_metadata?.subscription_expires_at;
     let isExpired = false;
     if (expiresAt) {
       if (Date.now() > new Date(expiresAt).getTime()) {
@@ -142,7 +170,8 @@ export async function POST(request: Request) {
     }
 
     const rawTier: SubscriptionTier =
-      (cookieTier ||
+      (flwTier ||
+      cookieTier ||
       userProfile?.subscription_tier ||
       user.user_metadata?.subscription_tier ||
       'free') as SubscriptionTier;

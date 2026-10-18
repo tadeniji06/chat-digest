@@ -907,17 +907,33 @@ app.post('/api/admin/bot/pair', async (req, res) => {
         return res.status(500).json({ error: err.message });
     }
 });
-// Auto-restore Official Bot if session directory exists on startup
+// Auto-restore ALL WhatsApp sessions (Official Bot and User sessions) if session directories exist on startup
 setTimeout(async () => {
-    const botSessionDir = path_1.default.join(SESSIONS_DIR, SYSTEM_BOT_USER_ID);
-    if (fs_1.default.existsSync(botSessionDir)) {
-        try {
-            logger.info('Auto-restoring Official Bot WhatsApp session...');
-            await startWhatsAppSession(SYSTEM_BOT_USER_ID);
+    try {
+        if (!fs_1.default.existsSync(SESSIONS_DIR))
+            return;
+        const entries = fs_1.default.readdirSync(SESSIONS_DIR, { withFileTypes: true });
+        for (const entry of entries) {
+            if (entry.isDirectory()) {
+                const sessionId = entry.name;
+                const credsFile = path_1.default.join(SESSIONS_DIR, sessionId, 'creds.json');
+                // If creds.json exists, this was an active WhatsApp session
+                if (fs_1.default.existsSync(credsFile)) {
+                    logger.info(`[Startup Auto-Restore] Restoring WhatsApp session for: ${sessionId}`);
+                    try {
+                        await startWhatsAppSession(sessionId);
+                        // Stagger multiple restores by 2 seconds to avoid connection rate limits
+                        await new Promise((r) => setTimeout(r, 2000));
+                    }
+                    catch (err) {
+                        logger.warn(`[Startup Auto-Restore] Could not restore session ${sessionId}: ${err.message}`);
+                    }
+                }
+            }
         }
-        catch (err) {
-            logger.warn(`Could not auto-restore official bot session: ${err}`);
-        }
+    }
+    catch (err) {
+        logger.warn(`Could not auto-restore sessions on startup: ${err.message}`);
     }
 }, 3000);
 app.listen(PORT, () => {

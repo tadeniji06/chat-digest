@@ -15,7 +15,19 @@ import {
 import { PLAN_LIMITS } from '@/types';
 import Footer from '@/components/Footer';
 
-export default async function LandingPage() {
+export default async function LandingPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const resolvedParams = searchParams ? await searchParams : {};
+  const code = resolvedParams?.code;
+
+  // If Supabase redirects auth code to root '/', seamlessly route it to /auth/callback to exchange session
+  if (code && typeof code === 'string') {
+    redirect(`/auth/callback?code=${encodeURIComponent(code)}`);
+  }
+
   const supabase = await createClient();
   const {
     data: { user },

@@ -46,8 +46,8 @@ export default async function DashboardLayout({
   const metadataPayment = user.user_metadata?.payment_status;
   const metadataExpiresAt = user.user_metadata?.subscription_expires_at;
 
-  const rawTier = (userProfile?.subscription_tier || cookieTier || metadataTier || 'free') as SubscriptionTier;
-  const paymentStatus = userProfile?.payment_status || (cookiePaid ? 'active' : null) || metadataPayment || (rawTier === 'free' ? 'active' : 'unpaid');
+  const rawTier = (userProfile?.subscription_tier || metadataTier || cookieTier || 'free') as SubscriptionTier;
+  const paymentStatus = userProfile?.payment_status || metadataPayment || (cookiePaid ? 'active' : null) || (rawTier === 'free' ? 'active' : 'unpaid');
   const expiresAt = userProfile?.subscription_expires_at || metadataExpiresAt || null;
 
   // Check 30-day expiration for paid subscriptions

@@ -32,28 +32,29 @@ export async function GET() {
       }
     }
 
-    // 2. Check public.users
+    // 2. Check public.users in database (canonical state across all devices)
     const { data: profile } = await supabase
       .from('users')
       .select('subscription_tier, payment_status, subscription_expires_at')
       .eq('id', user.id)
       .maybeSingle();
 
-    // 3. Check user.user_metadata
+    // 3. Check user.user_metadata (cross-device Supabase auth record)
     const metaTier = user.user_metadata?.subscription_tier;
     const metaPayment = user.user_metadata?.payment_status;
     const metaExpiresAt = user.user_metadata?.subscription_expires_at;
 
+    // Database or Auth Metadata takes highest priority so all devices stay in sync
     const resolvedTier: SubscriptionTier =
-      (cookieTier ||
-      profile?.subscription_tier ||
+      (profile?.subscription_tier ||
       metaTier ||
+      cookieTier ||
       'free') as SubscriptionTier;
 
     const paymentStatus =
       profile?.payment_status ||
-      (cookieStatus === 'active' ? 'active' : null) ||
       metaPayment ||
+      (cookieStatus === 'active' ? 'active' : null) ||
       (resolvedTier === 'free' ? 'active' : 'unpaid');
 
     const expiresAt =

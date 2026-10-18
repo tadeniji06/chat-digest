@@ -145,9 +145,9 @@ export default async function DashboardPage() {
   }
 
   const rawTier =
-    cookieTier ||
     profileRes.data?.subscription_tier ||
     user?.user_metadata?.subscription_tier ||
+    cookieTier ||
     'free';
 
   const expiresAt = profileRes.data?.subscription_expires_at || user?.user_metadata?.subscription_expires_at;

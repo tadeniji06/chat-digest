@@ -24,6 +24,8 @@ if (!fs_1.default.existsSync(SESSIONS_DIR)) {
 const supabaseUrl = process.env.SUPABASE_URL || 'https://bogkfyqaoczlejgaksee.supabase.co';
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
 const supabase = (0, supabase_js_1.createClient)(supabaseUrl, supabaseKey);
+// Next.js App URL for internal webhooks/alerts
+const NEXT_APP_URL = process.env.NEXT_APP_URL || process.env.FRONTEND_URL || 'https://www.chatdigest.site';
 // Dedicated Official Bot Session Identifier
 const SYSTEM_BOT_USER_ID = 'system_official_bot';
 // Helper to send a WhatsApp notification via the Official Bot or fallback to user socket
@@ -154,9 +156,10 @@ async function startWhatsAppSession(userId) {
     // Connection update handler (QR, Disconnect, Connect)
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
-        // Only update and store QR if the user is not in pairing code mode
-        if (qr && !sessionObj.pairingCode) {
+        // Update QR code whenever emitted by Baileys
+        if (qr) {
             sessionObj.qr = qr;
+            sessionObj.pairingCode = null; // Reset pairing code so QR is active and visible
             sessionObj.status = 'qr_ready';
             logger.info(`[${userId}] QR code generated`);
             try {
@@ -487,7 +490,7 @@ _Thank you for choosing ChatDigest!_`;
                     }
                     catch { }
                     // Push to Next.js internal endpoint
-                    fetch('http://localhost:3000/api/alerts/internal', {
+                    fetch(`${NEXT_APP_URL}/api/alerts/internal`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(alertRecord),
@@ -533,7 +536,13 @@ app.post('/api/session/start', async (req, res) => {
         return res.status(400).json({ error: 'userId is required' });
     }
     try {
+        const existing = activeSessions.get(userId);
+        // If not connected, clear pairingCode mode so QR is freshly emitted
+        if (existing && existing.status !== 'connected') {
+            existing.pairingCode = null;
+        }
         const session = await startWhatsAppSession(userId);
+        session.pairingCode = null;
         if (userEmail) {
             session.userEmail = userEmail;
             try {
@@ -554,7 +563,7 @@ app.post('/api/session/start', async (req, res) => {
         return res.json({
             status: session.status,
             qr: session.qr,
-            pairingCode: session.pairingCode || null,
+            pairingCode: null,
         });
     }
     catch (err) {
@@ -907,14 +916,32 @@ app.get('/api/admin/bot/status', async (req, res) => {
         pairingCode: botSession?.pairingCode || null,
     });
 });
+// Admin start QR session for official bot
+app.post('/api/admin/bot/start', async (req, res) => {
+    try {
+        const existing = activeSessions.get(SYSTEM_BOT_USER_ID);
+        if (existing && existing.status !== 'connected') {
+            existing.pairingCode = null;
+        }
+        const session = await startWhatsAppSession(SYSTEM_BOT_USER_ID);
+        session.pairingCode = null;
+        return res.json({
+            status: session.status,
+            qr: session.qr,
+            pairingCode: null,
+        });
+    }
+    catch (err) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+// Admin pair with phone number for official bot
 app.post('/api/admin/bot/pair', async (req, res) => {
     const { phoneNumber } = req.body;
     if (!phoneNumber) {
         return res.status(400).json({ error: 'Phone number is required' });
     }
     try {
-        const session = await startWhatsAppSession(SYSTEM_BOT_USER_ID);
-        // Clean phone number: remove +, spaces, dashes, brackets
         let cleanNumber = String(phoneNumber).replace(/[^0-9]/g, '');
         if (cleanNumber.startsWith('2340') && cleanNumber.length === 14) {
             cleanNumber = '234' + cleanNumber.slice(4);
@@ -922,25 +949,92 @@ app.post('/api/admin/bot/pair', async (req, res) => {
         else if (cleanNumber.startsWith('0') && cleanNumber.length === 11) {
             cleanNumber = '234' + cleanNumber.slice(1);
         }
-        // Allow socket 2.5s to initialize before requesting pairing code
-        setTimeout(async () => {
+        if (cleanNumber.length < 8) {
+            return res.status(400).json({ error: 'Please enter a valid phone number with country code' });
+        }
+        let session = activeSessions.get(SYSTEM_BOT_USER_ID);
+        const botSessionDir = path_1.default.join(SESSIONS_DIR, SYSTEM_BOT_USER_ID);
+        if (session && session.status === 'connected') {
+            return res.json({
+                success: true,
+                status: 'connected',
+                phoneNumber: session.phoneNumber,
+                message: 'Official Bot is already connected.',
+            });
+        }
+        // Reset old socket & dirty unlinked credentials so pairing code is 100% valid
+        if (session && session.socket) {
             try {
-                if (session.socket && session.status !== 'connected') {
-                    const rawCode = await session.socket.requestPairingCode(cleanNumber);
-                    const formattedCode = rawCode && rawCode.length === 8 && !rawCode.includes('-')
-                        ? `${rawCode.slice(0, 4)}-${rawCode.slice(4)}`
-                        : rawCode;
-                    session.pairingCode = formattedCode;
-                    logger.info(`[Official Bot] Generated pairing code: ${formattedCode} for phone: ${cleanNumber}`);
-                }
+                session.socket.end(undefined);
             }
-            catch (err) {
-                logger.error(`[Official Bot] Pairing code generation failed: ${err.message}`);
+            catch { }
+        }
+        try {
+            if (fs_1.default.existsSync(botSessionDir)) {
+                fs_1.default.rmSync(botSessionDir, { recursive: true, force: true });
             }
-        }, 2500);
+        }
+        catch { }
+        activeSessions.delete(SYSTEM_BOT_USER_ID);
+        session = await startWhatsAppSession(SYSTEM_BOT_USER_ID);
+        session.pairingCode = null;
+        // Allow socket 2.5s to establish handshake before requesting pairing code
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        if (!session.socket) {
+            return res.status(500).json({ error: 'WhatsApp socket initializing, please retry in 3 seconds' });
+        }
+        const rawCode = await session.socket.requestPairingCode(cleanNumber);
+        const formattedCode = rawCode && rawCode.length === 8 && !rawCode.includes('-')
+            ? `${rawCode.slice(0, 4)}-${rawCode.slice(4)}`
+            : rawCode;
+        session.pairingCode = formattedCode;
+        logger.info(`[Official Bot] Generated pairing code: ${formattedCode} for phone: ${cleanNumber}`);
         return res.json({
-            message: 'Pairing requested. Check /api/admin/bot/status in 3 seconds for your 8-digit code.',
+            success: true,
+            pairingCode: formattedCode,
+            rawCode,
+            phoneNumber: cleanNumber,
+            status: session.status,
         });
+    }
+    catch (err) {
+        logger.error(`[Official Bot] Pairing code generation failed: ${err.message}`);
+        try {
+            const botSessionDir = path_1.default.join(SESSIONS_DIR, SYSTEM_BOT_USER_ID);
+            fs_1.default.rmSync(botSessionDir, { recursive: true, force: true });
+            activeSessions.delete(SYSTEM_BOT_USER_ID);
+        }
+        catch { }
+        return res.status(500).json({
+            error: `Pairing failed (${err.message}). We reset the bot session, please click "Get Pairing Code" again.`,
+        });
+    }
+});
+// Admin disconnect / logout official bot
+app.post('/api/admin/bot/logout', async (req, res) => {
+    try {
+        const session = activeSessions.get(SYSTEM_BOT_USER_ID);
+        if (session && session.socket) {
+            try {
+                await session.socket.logout();
+            }
+            catch {
+                try {
+                    session.socket.end(undefined);
+                }
+                catch { }
+            }
+        }
+        const botSessionDir = path_1.default.join(SESSIONS_DIR, SYSTEM_BOT_USER_ID);
+        try {
+            if (fs_1.default.existsSync(botSessionDir)) {
+                fs_1.default.rmSync(botSessionDir, { recursive: true, force: true });
+            }
+        }
+        catch { }
+        activeSessions.delete(SYSTEM_BOT_USER_ID);
+        logger.info(`[Official Bot] Bot session unlinked and wiped successfully.`);
+        return res.json({ success: true, message: 'Official bot unlinked and reset.' });
     }
     catch (err) {
         return res.status(500).json({ error: err.message });

@@ -17,6 +17,7 @@ import {
   KeyRound,
   Eye,
   EyeOff,
+  PowerOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getUserFriendlyError } from '@/utils/errors';
@@ -116,34 +117,75 @@ export default function AdminBotPage() {
         return;
       }
 
-      toast.info('Request submitted! Generating 8-digit code...');
-
-      // Poll status for the generated code
-      let attempts = 0;
-      const poll = setInterval(async () => {
-        attempts++;
-        try {
-          const statusRes = await fetch('/api/admin/bot');
-          if (statusRes.ok) {
-            const statusData = await statusRes.json();
-            if (statusData.pairingCode) {
-              setPairingCode(statusData.pairingCode);
-              clearInterval(poll);
-              setRequestingCode(false);
-              toast.success('Pairing code ready!');
-              return;
+      if (data.pairingCode) {
+        setPairingCode(data.pairingCode);
+        toast.success('Pairing code ready!');
+      } else {
+        toast.info('Generating 8-digit code...');
+        let attempts = 0;
+        const poll = setInterval(async () => {
+          attempts++;
+          try {
+            const statusRes = await fetch('/api/admin/bot');
+            if (statusRes.ok) {
+              const statusData = await statusRes.json();
+              if (statusData.pairingCode) {
+                setPairingCode(statusData.pairingCode);
+                clearInterval(poll);
+                setRequestingCode(false);
+                toast.success('Pairing code ready!');
+                return;
+              }
             }
-          }
-        } catch {}
+          } catch {}
 
-        if (attempts > 8) {
-          clearInterval(poll);
-          setRequestingCode(false);
-        }
-      }, 1500);
+          if (attempts > 8) {
+            clearInterval(poll);
+            setRequestingCode(false);
+          }
+        }, 1500);
+      }
     } catch (err: any) {
       toast.error(getUserFriendlyError(err, 'Failed to connect. Please try again.'));
+    } finally {
       setRequestingCode(false);
+    }
+  };
+
+  const handleStartBotSession = async () => {
+    try {
+      const res = await fetch('/api/admin/bot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'start' }),
+      });
+      const data = await res.json();
+      if (data.qr) {
+        const url = await QRCode.toDataURL(data.qr, {
+          width: 260,
+          margin: 1,
+          color: { dark: '#0f172a', light: '#ffffff' },
+        });
+        setQrDataUrl(url);
+        toast.success('Bot QR Code refreshed!');
+      }
+      fetchBotStatus();
+    } catch {
+      toast.error('Failed to generate bot QR code.');
+    }
+  };
+
+  const handleDisconnectBot = async () => {
+    if (!confirm('Are you sure you want to unlink and reset the official bot?')) return;
+    try {
+      await fetch('/api/admin/bot', { method: 'DELETE' });
+      setQrDataUrl(null);
+      setPairingCode(null);
+      setBotStatus(null);
+      toast.success('Official bot disconnected and session reset.');
+      fetchBotStatus();
+    } catch {
+      toast.error('Failed to disconnect bot.');
     }
   };
 
@@ -281,13 +323,24 @@ export default function AdminBotPage() {
           </div>
         </div>
 
-        <button
-          onClick={fetchBotStatus}
-          className="px-3.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-colors self-start sm:self-auto shrink-0"
-        >
-          <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Refresh Status</span>
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+          {isConnected && (
+            <button
+              onClick={handleDisconnectBot}
+              className="px-3.5 py-1.5 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-colors"
+            >
+              <PowerOff className="w-3.5 h-3.5" />
+              <span>Unlink Bot</span>
+            </button>
+          )}
+          <button
+            onClick={fetchBotStatus}
+            className="px-3.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-colors"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Refresh Status</span>
+          </button>
+        </div>
       </div>
 
       {/* Connection Card */}
@@ -394,11 +447,28 @@ export default function AdminBotPage() {
               <div className="flex flex-col sm:flex-row items-center gap-8 py-2">
                 <div className="p-4 bg-white border border-gray-200 rounded-xl shadow-sm text-center">
                   {qrDataUrl ? (
-                    <img src={qrDataUrl} alt="Bot WhatsApp QR Code" className="w-60 h-60 mx-auto" />
+                    <div className="flex flex-col items-center">
+                      <img src={qrDataUrl} alt="Bot WhatsApp QR Code" className="w-60 h-60 mx-auto" />
+                      <button
+                        type="button"
+                        onClick={handleStartBotSession}
+                        className="mt-3 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors flex items-center gap-1.5"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Refresh QR</span>
+                      </button>
+                    </div>
                   ) : (
-                    <div className="w-60 h-60 flex flex-col items-center justify-center bg-gray-50 rounded-lg text-gray-400 text-xs">
-                      <RefreshCw className="w-6 h-6 animate-spin text-emerald-600 mb-2" />
-                      <span>Generating QR Code...</span>
+                    <div className="w-60 h-60 flex flex-col items-center justify-center bg-gray-50 rounded-lg text-gray-500 text-xs p-4">
+                      <Zap className="w-8 h-8 text-emerald-600 mb-2" />
+                      <button
+                        type="button"
+                        onClick={handleStartBotSession}
+                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-sm transition-colors text-xs flex items-center gap-1.5"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Generate Bot QR Code</span>
+                      </button>
                     </div>
                   )}
                 </div>

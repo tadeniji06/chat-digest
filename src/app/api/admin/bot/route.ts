@@ -41,7 +41,16 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { phoneNumber } = body;
+    const { phoneNumber, action } = body;
+
+    if (action === 'start') {
+      const res = await fetch(`${BRIDGE_URL}/api/admin/bot/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      return NextResponse.json(data, { status: res.status });
+    }
 
     if (!phoneNumber) {
       return NextResponse.json({ error: 'Phone number is required' }, { status: 400 });
@@ -51,6 +60,28 @@ export async function POST(request: Request) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phoneNumber }),
+    });
+
+    const data = await res.json();
+    return NextResponse.json(data, { status: res.status });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
+export async function DELETE() {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const res = await fetch(`${BRIDGE_URL}/api/admin/bot/logout`, {
+      method: 'POST',
     });
 
     const data = await res.json();

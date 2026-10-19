@@ -43,7 +43,7 @@ async function sendWhatsAppBotNotification(recipientPhoneOrJid, text, userFallba
             logger.info(`[Bot Notification] Sent via Official Bot to ${targetJid}`);
             return true;
         }
-        // 2. Fallback: if user session provided and connected, send directly to user
+        // 2. Fallback: if user session provided and connected, send direct to user
         if (userFallbackSession && userFallbackSession.status === 'connected' && userFallbackSession.socket) {
             await userFallbackSession.socket.sendMessage(targetJid, { text });
             logger.info(`[Bot Notification] Sent via User Connected Session to ${targetJid}`);

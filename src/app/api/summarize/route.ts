@@ -124,39 +124,31 @@ export async function POST(request: Request) {
     const plan = PLAN_LIMITS[tier] || PLAN_LIMITS.free;
 
     // Check summary limits:
-    if (tier === 'free') {
-      // Free plan: exactly 1 AI summary forever
-      const { count: lifetimeCount } = await supabase
-        .from('summaries')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id);
+    if (tier === 'free' || !plan.hasSummaries || plan.dailySummaries <= 0) {
+      return NextResponse.json(
+        {
+          error:
+            'AI Summaries are not available on the Free plan. Please upgrade to Basic, Pro, Max, or Enterprise to generate executive group digests.',
+        },
+        { status: 403 }
+      );
+    }
 
-      if ((lifetimeCount || 0) >= 1) {
-        return NextResponse.json(
-          {
-            error:
-              'You have used your 1 free AI summary limit forever. Please upgrade to Basic, Pro, Max, or Enterprise to generate more daily digests.',
-          },
-          { status: 403 }
-        );
-      }
-    } else {
-      // Paid plan: check usage in last 24 hours
-      const past24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const { count: dailyCount } = await supabase
-        .from('summaries')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .gte('created_at', past24h);
+    // Paid plan: check usage in last 24 hours
+    const past24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { count: dailyCount } = await supabase
+      .from('summaries')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .gte('created_at', past24h);
 
-      if ((dailyCount || 0) >= plan.dailySummaries) {
-        return NextResponse.json(
-          {
-            error: `You have reached your limit of ${plan.dailySummaries} summary(ies) for today on the ${plan.name} plan. Your quota resets 24 hours after your last generation, or upgrade your plan for higher daily limits.`,
-          },
-          { status: 429 }
-        );
-      }
+    if ((dailyCount || 0) >= plan.dailySummaries) {
+      return NextResponse.json(
+        {
+          error: `You have reached your limit of ${plan.dailySummaries} summary(ies) for today on the ${plan.name} plan. Your quota resets 24 hours after your last generation, or upgrade your plan for higher daily limits.`,
+        },
+        { status: 429 }
+      );
     }
 
     // Fetch messages from that group across selected timeframe

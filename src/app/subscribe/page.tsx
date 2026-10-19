@@ -182,12 +182,12 @@ function SubscribeContent() {
                     <li className="flex items-start gap-2">
                       <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                       <span>
-                        {plan.isLifetimeSummary ? (
-                          <strong>1 AI summary forever</strong>
-                        ) : (
+                        {plan.hasSummaries ? (
                           <span>
                             <strong>{plan.dailySummaries} summary/day</strong> (24h reset)
                           </span>
+                        ) : (
+                          <span className="text-gray-400">No AI summaries (Upgrade to unlock)</span>
                         )}
                       </span>
                     </li>

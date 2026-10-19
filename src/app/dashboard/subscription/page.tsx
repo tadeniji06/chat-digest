@@ -271,15 +271,15 @@ function SubscriptionContent() {
                       <strong>{plan.keywordsPerGroup}</strong> keywords / group
                     </span>
                   </li>
-                  <li className="flex items-start gap-2" title={plan.isLifetimeSummary ? 'Only 1 summary lifetime' : `${plan.dailySummaries} summaries per day (resets every 24h)`}>
+                  <li className="flex items-start gap-2" title={plan.hasSummaries ? `${plan.dailySummaries} summaries per day (resets every 24h)` : 'AI summaries are disabled on the Free tier'}>
                     <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                     <span>
-                      {plan.isLifetimeSummary ? (
-                        <strong>1 AI summary forever</strong>
-                      ) : (
+                      {plan.hasSummaries ? (
                         <span>
                           <strong>{plan.dailySummaries} AI summary/day</strong> (24h reset)
                         </span>
+                      ) : (
+                        <span className="text-gray-400">No AI summaries (Upgrade to unlock)</span>
                       )}
                     </span>
                   </li>

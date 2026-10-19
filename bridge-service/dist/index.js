@@ -294,7 +294,7 @@ async function startWhatsAppSession(userId) {
                         let tierName = 'Free';
                         let maxGroups = 1;
                         let keywordsCount = 2;
-                        let summaryInfo = '1 AI summary lifetime';
+                        let summaryInfo = 'Disabled on Free (Upgrade to unlock)';
                         if (resolvedTier === 'basic') {
                             tierName = 'Basic (₦2,000/mo)';
                             maxGroups = 3;
@@ -330,7 +330,7 @@ Your WhatsApp session is now actively connected.
 
 ⚡ *What you can do:*
 1. *Keyword Alerts:* When any of your chosen words are mentioned in your monitored groups, you'll receive an instant notification here.
-2. *AI Summaries & Meeting Notes:* Log in to your dashboard to generate concise executive summaries, view action items, and review discussions.
+${resolvedTier !== 'free' ? "2. *AI Summaries & Meeting Notes:* Log in to your dashboard to generate concise executive summaries, view action items, and review discussions." : "2. *AI Summaries & Meeting Notes:* Upgrade your plan on your dashboard to unlock executive summaries and automated meeting notes."}
 
 🔗 *Access Dashboard:* https://www.chatdigest.site/dashboard
 💳 *Manage or Upgrade Plan:* https://www.chatdigest.site/dashboard/subscription

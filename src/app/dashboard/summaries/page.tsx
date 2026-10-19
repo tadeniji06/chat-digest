@@ -15,8 +15,10 @@ import {
   Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import Link from 'next/link';
 import { AISummary, MonitoredGroup, TopicDiscussed, SpeakerPoint } from '@/types';
 import { getUserFriendlyError } from '@/utils/errors';
+import { useSubscriptionStore } from '@/store/useSubscriptionStore';
 
 export default function SummariesPage() {
   const [summaries, setSummaries] = useState<AISummary[]>([]);
@@ -26,9 +28,12 @@ export default function SummariesPage() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
 
+  const { tier, isExpired, fetchTier } = useSubscriptionStore();
+
   const fetchData = async () => {
     setLoading(true);
     try {
+      fetchTier();
       const [sumRes, grpRes] = await Promise.all([
         fetch('/api/summarize'),
         fetch('/api/whatsapp/groups'),
@@ -118,71 +123,94 @@ export default function SummariesPage() {
       </div>
 
       {/* Generate On-Demand Summary Control Card */}
-      <div className="p-6 rounded-xl bg-white border border-gray-200 shadow-sm">
-        <div className="flex items-center gap-2 mb-4">
-          <Sparkles className="w-5 h-5 text-emerald-600" />
-          <h2 className="text-base font-bold text-gray-900">Generate On-Demand Summary</h2>
+      {tier === 'free' || isExpired ? (
+        <div className="p-6 rounded-xl bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-emerald-700" />
+              <h2 className="text-base font-bold text-gray-900">
+                AI Summaries &amp; Meeting Notes are a Paid Feature
+              </h2>
+            </div>
+            <p className="text-xs text-gray-600 leading-relaxed max-w-xl">
+              AI Summaries are disabled on the Free tier. Upgrade to <strong>Basic (₦2,000/mo)</strong>, <strong>Pro (₦5,000/mo)</strong>, <strong>Max</strong>, or <strong>Enterprise</strong> to unlock automated executive briefs, key discussion points, and action items.
+            </p>
+          </div>
+          <Link
+            href="/dashboard/subscription"
+            className="px-5 py-2.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-sm shrink-0 flex items-center gap-2"
+          >
+            <span>Upgrade to Unlock</span>
+            <Sparkles className="w-4 h-4" />
+          </Link>
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-              Select Monitored Group
-            </label>
-            <select
-              value={selectedGroup}
-              onChange={(e) => setSelectedGroup(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-            >
-              {groups.length === 0 ? (
-                <option value="">No monitored groups yet</option>
-              ) : (
-                groups.map((g: any) => (
-                  <option key={g.id || g.group_jid} value={g.id || g.group_jid}>
-                    {g.name || g.group_name}
-                  </option>
-                ))
-              )}
-            </select>
+      ) : (
+        <div className="p-6 rounded-xl bg-white border border-gray-200 shadow-sm">
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles className="w-5 h-5 text-emerald-600" />
+            <h2 className="text-base font-bold text-gray-900">Generate On-Demand Summary</h2>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-              Timeframe
-            </label>
-            <select
-              value={hoursBack}
-              onChange={(e) => setHoursBack(Number(e.target.value))}
-              className="w-full px-3 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-            >
-              <option value={12}>Past 12 Hours</option>
-              <option value={24}>Past 24 Hours (Daily)</option>
-              <option value={48}>Past 48 Hours</option>
-              <option value={168}>Past 7 Days (Weekly Digest)</option>
-            </select>
-          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                Select Monitored Group
+              </label>
+              <select
+                value={selectedGroup}
+                onChange={(e) => setSelectedGroup(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              >
+                {groups.length === 0 ? (
+                  <option value="">No monitored groups yet</option>
+                ) : (
+                  groups.map((g: any) => (
+                    <option key={g.id || g.group_jid} value={g.id || g.group_jid}>
+                      {g.name || g.group_name}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
 
-          <div className="flex items-end">
-            <button
-              onClick={handleGenerateSummary}
-              disabled={generating || groups.length === 0}
-              className="w-full py-2 px-4 rounded-lg text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm"
-            >
-              {generating ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Synthesizing Chat with AI...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />
-                  <span>Generate Summary</span>
-                </>
-              )}
-            </button>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                Timeframe
+              </label>
+              <select
+                value={hoursBack}
+                onChange={(e) => setHoursBack(Number(e.target.value))}
+                className="w-full px-3 py-2 rounded-lg bg-white border border-gray-300 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              >
+                <option value={12}>Past 12 Hours</option>
+                <option value={24}>Past 24 Hours (Daily)</option>
+                <option value={48}>Past 48 Hours</option>
+                <option value={168}>Past 7 Days (Weekly Digest)</option>
+              </select>
+            </div>
+
+            <div className="flex items-end">
+              <button
+                onClick={handleGenerateSummary}
+                disabled={generating || groups.length === 0}
+                className="w-full py-2 px-4 rounded-lg text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors flex items-center justify-center gap-2 disabled:opacity-50 shadow-sm"
+              >
+                {generating ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Synthesizing Chat with AI...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    <span>Generate Summary</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Summaries Feed */}
       <div className="space-y-6">

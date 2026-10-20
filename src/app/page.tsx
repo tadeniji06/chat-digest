@@ -28,12 +28,24 @@ export default async function LandingPage({
     redirect(`/auth/callback?code=${encodeURIComponent(code)}`);
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let isAuthenticated = false;
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
 
-  if (user) {
+    if (error) {
+      console.error('Unable to verify the landing-page session:', error);
+    } else {
+      isAuthenticated = Boolean(user);
+    }
+  } catch (error) {
+    console.error('Unable to verify the landing-page session:', error);
+  }
+
+  if (isAuthenticated) {
     redirect('/dashboard');
   }
   const jsonLd = {

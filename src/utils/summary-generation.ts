@@ -25,6 +25,29 @@ export interface GeneratedSummary {
 const TRANSCRIPT_CHUNK_SIZE = 12_000;
 const NOTES_CHUNK_SIZE = 20_000;
 
+export class GeminiGenerationError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly retryAfterMs: number | null = null,
+    readonly quotaExhausted = false
+  ) {
+    super(message);
+    this.name = 'GeminiGenerationError';
+  }
+}
+
+function getRetryDelay(response: Response): number | null {
+  const retryAfter = response.headers.get('retry-after');
+  if (!retryAfter) return null;
+
+  const seconds = Number(retryAfter);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+
+  const retryAt = Date.parse(retryAfter);
+  return Number.isNaN(retryAt) ? null : Math.max(0, retryAt - Date.now());
+}
+
 function formatMessage(message: SummaryMessage) {
   return `[${new Date(message.timestamp).toISOString()}] ${message.sender_name || 'Member'}: ${message.content}`;
 }
@@ -57,7 +80,7 @@ async function generateInBatches<T>(
   generate: (item: T, index: number) => Promise<GeneratedSummary>
 ): Promise<GeneratedSummary[]> {
   const results: GeneratedSummary[] = [];
-  const concurrency = 3;
+  const concurrency = 1;
 
   for (let offset = 0; offset < items.length; offset += concurrency) {
     const batch = items.slice(offset, offset + concurrency);
@@ -155,7 +178,46 @@ async function generateFromGemini(prompt: string, apiKey: string): Promise<Gener
   );
 
   if (!response.ok) {
-    throw new Error(`AI summary service returned HTTP ${response.status}.`);
+    const errorBody: unknown = await response.json().catch(() => null);
+    const apiError =
+      errorBody &&
+      typeof errorBody === 'object' &&
+      'error' in errorBody &&
+      errorBody.error &&
+      typeof errorBody.error === 'object'
+        ? errorBody.error
+        : null;
+    const providerMessage =
+      apiError && 'message' in apiError && typeof apiError.message === 'string'
+        ? apiError.message
+        : `Gemini returned HTTP ${response.status}.`;
+    const statusText =
+      apiError && 'status' in apiError && typeof apiError.status === 'string'
+        ? apiError.status
+        : '';
+    const details =
+      apiError && 'details' in apiError && Array.isArray(apiError.details)
+        ? apiError.details
+        : [];
+    const retryInfo = details.find(
+      (detail): detail is { retryDelay: string } =>
+        detail !== null &&
+        typeof detail === 'object' &&
+        'retryDelay' in detail &&
+        typeof detail.retryDelay === 'string'
+    );
+    const retryDelaySeconds = retryInfo ? Number.parseFloat(retryInfo.retryDelay) : Number.NaN;
+    const retryAfterMs = getRetryDelay(response);
+    const quotaExhausted =
+      response.status === 429 &&
+      (/per.?day|daily|quota.*exceed/i.test(providerMessage) ||
+        /quota/i.test(statusText));
+    throw new GeminiGenerationError(
+      providerMessage,
+      response.status,
+      retryAfterMs ?? (Number.isFinite(retryDelaySeconds) ? retryDelaySeconds * 1000 : null),
+      quotaExhausted
+    );
   }
 
   const data: unknown = await response.json();
@@ -191,6 +253,30 @@ async function generateFromGemini(prompt: string, apiKey: string): Promise<Gener
   return parseSummary(text);
 }
 
+async function generateWithRetry(prompt: string, apiKey: string): Promise<GeneratedSummary> {
+  const maxRetries = 2;
+
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await generateFromGemini(prompt, apiKey);
+    } catch (error) {
+      if (!(error instanceof GeminiGenerationError) || error.quotaExhausted || attempt >= maxRetries) {
+        throw error;
+      }
+
+      const retryable = error.status === 429 || error.status === 500 || error.status === 502 || error.status === 503;
+      if (!retryable) throw error;
+
+      const backoff = Math.min(2000 * 2 ** attempt, 8000);
+      const delay = Math.max(backoff, error.retryAfterMs || 0);
+      if (delay > 30_000) throw error;
+
+      console.warn(`Gemini summary request returned HTTP ${error.status}; retrying in ${delay}ms.`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 export async function generateDetailedSummary(
   messages: SummaryMessage[],
   groupName: string,
@@ -201,7 +287,7 @@ export async function generateDetailedSummary(
     const transcript = chunk.map(formatMessage).join('\n');
     const instruction =
       `This is transcript segment ${index + 1} of ${transcriptChunks.length}. Analyze every message in this segment. Preserve each distinct substantive update and its details in the JSON fields.`;
-    return generateFromGemini(createPrompt(transcript, groupName, instruction), apiKey);
+    return generateWithRetry(createPrompt(transcript, groupName, instruction), apiKey);
   });
 
   while (notes.length > 1) {
@@ -216,7 +302,7 @@ export async function generateDetailedSummary(
     notes = await generateInBatches(noteChunks, (chunk, index) => {
       const instruction =
         `Combine these ordered segment notes without dropping any distinct factual detail, decision, question, speaker attribution, or action. This is consolidation pass ${index + 1}; retain details even when the result is long.`;
-      return generateFromGemini(
+      return generateWithRetry(
         createPrompt(JSON.stringify(chunk), groupName, instruction),
         apiKey
       );

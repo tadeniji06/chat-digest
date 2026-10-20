@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Check, Copy, Download, LoaderCircle, Share2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import type { AISummary, SummaryKeyPoint } from '@/types';
@@ -13,6 +13,8 @@ export default function ShareSummaryButton({
   const [shareToken, setShareToken] = useState(summary.share_token || null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
+  const shareLinkRef = useRef<HTMLInputElement>(null);
   const summaryId = summary.id;
   const sharePath = shareToken ? `/shared/${shareToken}` : '';
   const keyPoints = summary.key_points?.find(
@@ -20,10 +22,6 @@ export default function ShareSummaryButton({
   );
 
   const enableSharing = async () => {
-    if (!window.confirm('Anyone with this link can read this summary. It may contain details from your group conversation. You can revoke the link at any time. Create a public link?')) {
-      return;
-    }
-
     setBusy(true);
     try {
       const response = await fetch(`/api/summaries/${summaryId}/share`, { method: 'POST' });
@@ -32,7 +30,19 @@ export default function ShareSummaryButton({
         throw new Error(data.error || 'Unable to create a share link.');
       }
       setShareToken(data.shareToken);
-      toast.success('Public summary link created.');
+      const shareUrl = new URL(`/shared/${data.shareToken}`, window.location.origin).href;
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        setCopied(true);
+        toast.success('Share link created and copied. Paste it anywhere you want to share it.');
+      } catch {
+        setCopyFailed(true);
+        toast.success('Share link created. Select and copy the link below.');
+        window.setTimeout(() => {
+          shareLinkRef.current?.focus();
+          shareLinkRef.current?.select();
+        }, 0);
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to create a share link.');
     } finally {
@@ -54,6 +64,7 @@ export default function ShareSummaryButton({
       }
       setShareToken(null);
       setCopied(false);
+      setCopyFailed(false);
       toast.success('Share link revoked.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Unable to revoke this share link.');
@@ -66,9 +77,13 @@ export default function ShareSummaryButton({
     try {
       await navigator.clipboard.writeText(new URL(sharePath, window.location.origin).href);
       setCopied(true);
+      setCopyFailed(false);
       toast.success('Summary link copied.');
     } catch {
-      toast.error('Could not copy the link. Please copy it from the address below.');
+      setCopyFailed(true);
+      shareLinkRef.current?.focus();
+      shareLinkRef.current?.select();
+      toast.error('Could not copy automatically. The link is selected so you can copy it manually.');
     }
   };
 
@@ -160,13 +175,17 @@ export default function ShareSummaryButton({
             </button>
           </div>
           {sharePath && (
-            <a
-              href={sharePath}
-              className="inline-flex items-center gap-1 break-all text-xs text-emerald-700 underline"
-            >
-              {sharePath}
-            </a>
+            <input
+              ref={shareLinkRef}
+              type="url"
+              aria-label="Public summary link"
+              readOnly
+              value={new URL(sharePath, typeof window === 'undefined' ? 'https://www.chatdigest.site' : window.location.origin).href}
+              onFocus={(event) => event.currentTarget.select()}
+              className="w-full max-w-xl rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700"
+            />
           )}
+          {copyFailed && <p className="text-xs text-gray-600">Tap the selected link, choose Copy, then paste it into WhatsApp or anywhere else.</p>}
         </>
       )}
     </div>

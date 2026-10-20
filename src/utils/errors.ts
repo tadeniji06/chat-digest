@@ -4,7 +4,19 @@
 export function getUserFriendlyError(err: unknown, defaultMessage = 'Something went wrong. Please try again.'): string {
   if (!err) return defaultMessage;
 
-  const raw = typeof err === 'string' ? err : err instanceof Error ? err.message : (err as any)?.error || (err as any)?.message || '';
+  const candidate =
+    typeof err === 'string'
+      ? err
+      : err instanceof Error
+        ? err.message
+        : typeof err === 'object' && err !== null
+          ? 'error' in err
+            ? err.error
+            : 'message' in err
+              ? err.message
+              : ''
+          : '';
+  const raw = typeof candidate === 'string' ? candidate : '';
   if (!raw || typeof raw !== 'string') return defaultMessage;
 
   const lower = raw.toLowerCase();
@@ -52,9 +64,36 @@ export function getUserFriendlyError(err: unknown, defaultMessage = 'Something w
     return 'Payment gateway is momentarily busy. Please refresh or try again shortly.';
   }
 
-  // AI & Gemini
-  if (lower.includes('gemini') || lower.includes('quota') || lower.includes('model') || lower.includes('resource exhausted')) {
-    return 'AI digest generation is currently in high demand. Please try again in a few moments.';
+  // AI provider availability, quota, and configuration
+  if (
+    lower.includes('resource exhausted') ||
+    lower.includes('quota exceeded') ||
+    lower.includes('rate limit') ||
+    lower.includes('too many requests') ||
+    lower.includes('http 429') ||
+    lower.includes('status 429')
+  ) {
+    return 'The AI provider is rate-limiting requests. Please wait a minute and try again.';
+  }
+  if (
+    lower.includes('temporarily unavailable') ||
+    lower.includes('overloaded') ||
+    lower.includes('http 503') ||
+    lower.includes('status 503')
+  ) {
+    return 'The AI service is temporarily unavailable. Please try again in a minute.';
+  }
+  if (
+    lower.includes('api key') ||
+    lower.includes('permission denied') ||
+    lower.includes('unauthorized') ||
+    lower.includes('http 403') ||
+    lower.includes('http 401')
+  ) {
+    return 'The AI service configuration needs attention. Please contact support.';
+  }
+  if (lower.includes('gemini') || lower.includes('model')) {
+    return 'The AI service could not complete this summary. Please try again; if it keeps happening, contact support.';
   }
 
   // If already a clean user-facing sentence (does not look like code/SQL/trace)

@@ -37,3 +37,36 @@ $$;
 
 revoke all on function public.get_public_summary(text) from public, anon, authenticated;
 grant execute on function public.get_public_summary(text) to anon, authenticated;
+
+create or replace function public.set_summary_share(
+  p_summary_id uuid,
+  p_share_token text
+)
+returns table (share_token text)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  if p_share_token is not null and p_share_token !~ '^[A-Za-z0-9_-]{43}$' then
+    raise exception 'Invalid share token';
+  end if;
+
+  return query
+  update public.summaries as s
+  set share_token = case
+    when p_share_token is null then null
+    else coalesce(s.share_token, p_share_token)
+  end
+  where s.id = p_summary_id
+    and s.user_id = auth.uid()
+  returning s.share_token;
+end;
+$$;
+
+revoke all on function public.set_summary_share(uuid, text) from public, anon, authenticated;
+grant execute on function public.set_summary_share(uuid, text) to authenticated;

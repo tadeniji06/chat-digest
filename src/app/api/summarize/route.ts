@@ -1,7 +1,17 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { SubscriptionTier, PLAN_LIMITS } from '@/types';
-import { generateDetailedSummary, type SummaryMessage } from '@/utils/summary-generation';
+import {
+  generateDetailedSummary,
+  GeminiGenerationError,
+  type SummaryMessage,
+} from '@/utils/summary-generation';
+
+interface FlutterwaveTransaction {
+  status?: string;
+  created_at: string;
+  meta?: { tier?: string };
+}
 
 export async function GET(request: Request) {
   try {
@@ -96,8 +106,13 @@ export async function POST(request: Request) {
             { headers: { Authorization: `Bearer ${flwSecret}` } }
           );
           if (flwRes.ok) {
-            const flwData = await flwRes.json();
-            const validTx = flwData.data?.find((tx: any) => tx.status === 'successful' && (Date.now() - new Date(tx.created_at).getTime() < 30 * 24 * 60 * 60 * 1000));
+            const flwData: { data?: FlutterwaveTransaction[] } = await flwRes.json();
+            const validTx = flwData.data?.find(
+              (tx) =>
+                tx.status === 'successful' &&
+                typeof tx.created_at === 'string' &&
+                Date.now() - new Date(tx.created_at).getTime() < 30 * 24 * 60 * 60 * 1000
+            );
             if (validTx) {
               const detectedTier = (validTx.meta?.tier || 'basic') as SubscriptionTier;
               if (validTiers.includes(detectedTier)) {
@@ -252,6 +267,38 @@ export async function POST(request: Request) {
       );
     } catch (error) {
       console.error('Detailed AI summary generation failed:', error);
+      if (error instanceof GeminiGenerationError) {
+        if (error.quotaExhausted) {
+          return NextResponse.json(
+            { error: 'The AI summary quota for this API key has been used up. Please try again after the quota resets.' },
+            { status: 429 }
+          );
+        }
+        if (error.status === 429) {
+          return NextResponse.json(
+            { error: 'Gemini is rate-limiting summary requests. Please wait a minute, then try again.' },
+            { status: 429 }
+          );
+        }
+        if (error.status === 503 || error.status === 500 || error.status === 502) {
+          return NextResponse.json(
+            { error: 'Gemini is temporarily unavailable. Please try your summary again in a minute.' },
+            { status: 503 }
+          );
+        }
+        if (error.status === 401 || error.status === 403) {
+          return NextResponse.json(
+            { error: 'The Gemini API key is invalid or does not have access to the configured model. Please contact support.' },
+            { status: 502 }
+          );
+        }
+        if (error.status === 404) {
+          return NextResponse.json(
+            { error: 'The configured Gemini model is unavailable. Please contact support.' },
+            { status: 502 }
+          );
+        }
+      }
       return NextResponse.json({ error: 'The AI could not complete this summary. Please try again.' }, { status: 502 });
     }
 

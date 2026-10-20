@@ -26,7 +26,9 @@ export async function POST(_request: Request, { params }: RouteContext) {
 
   if (lookupError) {
     console.error('Unable to look up summary share state:', lookupError);
-    return NextResponse.json({ error: 'Unable to create a share link.' }, { status: 500 });
+    return NextResponse.json({
+      error: 'Unable to read the summary share settings. Verify the latest summary-sharing SQL migration has been applied.',
+    }, { status: 500 });
   }
   if (!summary) {
     return NextResponse.json({ error: 'Summary not found.' }, { status: 404 });
@@ -36,40 +38,24 @@ export async function POST(_request: Request, { params }: RouteContext) {
   }
 
   const shareToken = randomBytes(32).toString('base64url');
-  const { data: updatedSummary, error: updateError } = await supabase
-    .from('summaries')
-    .update({ share_token: shareToken })
-    .eq('id', summaryId)
-    .eq('user_id', user.id)
-    .is('share_token', null)
-    .select('share_token')
-    .maybeSingle();
+  const { data: updatedSummaries, error: updateError } = await supabase.rpc('set_summary_share', {
+    p_summary_id: summaryId,
+    p_share_token: shareToken,
+  });
 
   if (updateError) {
     console.error('Unable to enable summary sharing:', updateError);
-    return NextResponse.json({ error: 'Unable to create a share link.' }, { status: 500 });
+    return NextResponse.json({
+      error: 'Unable to enable sharing. Apply the latest summary-sharing SQL migration and try again.',
+    }, { status: 500 });
   }
 
-  if (updatedSummary?.share_token) {
-    return NextResponse.json({ shareToken: updatedSummary.share_token });
+  const savedToken = updatedSummaries?.[0]?.share_token;
+  if (!savedToken) {
+    return NextResponse.json({ error: 'Summary not found.' }, { status: 404 });
   }
 
-  const { data: currentSummary, error: currentError } = await supabase
-    .from('summaries')
-    .select('share_token')
-    .eq('id', summaryId)
-    .eq('user_id', user.id)
-    .maybeSingle();
-
-  if (currentError) {
-    console.error('Unable to confirm summary share state:', currentError);
-    return NextResponse.json({ error: 'Unable to create a share link.' }, { status: 500 });
-  }
-  if (!currentSummary?.share_token) {
-    return NextResponse.json({ error: 'Unable to create a share link.' }, { status: 409 });
-  }
-
-  return NextResponse.json({ shareToken: currentSummary.share_token });
+  return NextResponse.json({ shareToken: savedToken });
 }
 
 export async function DELETE(_request: Request, { params }: RouteContext) {
@@ -83,19 +69,16 @@ export async function DELETE(_request: Request, { params }: RouteContext) {
   }
 
   const { summaryId } = await params;
-  const { data, error } = await supabase
-    .from('summaries')
-    .update({ share_token: null })
-    .eq('id', summaryId)
-    .eq('user_id', user.id)
-    .select('id')
-    .maybeSingle();
+  const { data: updatedSummaries, error } = await supabase.rpc('set_summary_share', {
+    p_summary_id: summaryId,
+    p_share_token: null,
+  });
 
   if (error) {
     console.error('Unable to revoke summary sharing:', error);
     return NextResponse.json({ error: 'Unable to revoke this share link.' }, { status: 500 });
   }
-  if (!data) {
+  if (!updatedSummaries?.length) {
     return NextResponse.json({ error: 'Summary not found.' }, { status: 404 });
   }
 

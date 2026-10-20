@@ -48,6 +48,8 @@ Open your [Supabase SQL Editor](https://supabase.com/dashboard/project/bogkfyqao
 - Adds triggers to auto-create profile rows upon sign-up.
 - Configures RLS policies for complete multi-tenant privacy.
 
+For an existing installation, also run [`supabase_summary_sharing.sql`](./supabase_summary_sharing.sql) before deploying public summary links. Summary links expose only the saved digest, are unlisted, and can be revoked by the owner.
+
 ---
 
 ## 🔑 2. Configure Google Authentication in Supabase

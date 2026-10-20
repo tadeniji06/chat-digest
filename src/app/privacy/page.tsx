@@ -132,7 +132,7 @@ export default function PrivacyPage() {
               We employ rigorous physical, organizational, and electronic safeguards to ensure your account security:
             </p>
             <ul className="list-disc pl-5 space-y-1.5 text-gray-700">
-              <li>Row-Level Security (RLS) is strictly enforced across all database tables. No user can read another account&apos;s summaries, alerts, or session configurations.</li>
+              <li>Row-Level Security (RLS) is strictly enforced across all tables. Saved summaries are private to their owner unless the owner explicitly creates a public share link. Anyone with that unlisted link can read the shared summary until the owner revokes it; raw chat messages and account details are not included.</li>
               <li>Encrypted in transit using TLS 1.3 encryption and encrypted at rest on enterprise cloud infrastructure.</li>
               <li>You can disconnect your WhatsApp session at any time with a single click in your dashboard, which immediately revokes socket keys and clears local auth credentials.</li>
             </ul>

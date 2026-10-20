@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { GoogleGenAI } from '@google/genai';
 import { SubscriptionTier, PLAN_LIMITS } from '@/types';
+import { generateDetailedSummary, type SummaryMessage } from '@/utils/summary-generation';
 
 export async function GET(request: Request) {
   try {
@@ -54,8 +54,15 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { groupJid, groupName, hoursBack = 24 } = body;
 
-    if (!groupJid) {
-      return NextResponse.json({ error: 'groupJid is required' }, { status: 400 });
+    if (typeof groupJid !== 'string' || !groupJid.trim()) {
+      return NextResponse.json({ error: 'A valid groupJid is required.' }, { status: 400 });
+    }
+
+    const resolvedGroupName =
+      typeof groupName === 'string' && groupName.trim() ? groupName.trim() : 'WhatsApp Group';
+
+    if (![12, 24, 48, 168].includes(hoursBack)) {
+      return NextResponse.json({ error: 'Choose a supported summary timeframe.' }, { status: 400 });
     }
 
     // Check user tier & payment status: check cookie, profile, metadata
@@ -155,24 +162,39 @@ export async function POST(request: Request) {
     const periodStart = new Date(Date.now() - hoursBack * 60 * 60 * 1000).toISOString();
     const periodEnd = new Date().toISOString();
 
-    let messages: any[] = [];
+    const messages: SummaryMessage[] = [];
+    const seenMessages = new Set<string>();
 
-    // 1. Fetch from Supabase
-    try {
-      const { data: dbMsgs } = await supabase
+    // Read the complete selected period from Supabase in pages instead of silently stopping at 500 rows.
+    for (let offset = 0; ; offset += 1000) {
+      const { data: dbMessages, error: messageError } = await supabase
         .from('messages')
-        .select('*')
+        .select('sender_name,content,timestamp')
         .eq('group_jid', groupJid)
         .gte('timestamp', periodStart)
+        .lte('timestamp', periodEnd)
         .order('timestamp', { ascending: true })
-        .limit(500);
+        .order('id', { ascending: true })
+        .range(offset, offset + 999);
 
-      if (dbMsgs && dbMsgs.length > 0) {
-        messages = [...dbMsgs];
+      if (messageError) {
+        console.error('Unable to fetch messages for summary:', messageError);
+        return NextResponse.json({ error: 'Unable to load all messages for this summary.' }, { status: 502 });
       }
-    } catch {}
 
-    // 2. Fetch from Bridge Service buffer
+      for (const message of dbMessages || []) {
+        const timestamp = new Date(message.timestamp).toISOString();
+        const key = `${timestamp}\u0000${message.sender_name || ''}\u0000${message.content}`;
+        seenMessages.add(key);
+        messages.push({ ...message, timestamp });
+      }
+
+      if (!dbMessages || dbMessages.length < 1000) {
+        break;
+      }
+    }
+
+    // Include recent messages still held by the bridge and deduplicate against persisted messages.
     const BRIDGE_URL = process.env.NEXT_PUBLIC_BRIDGE_URL || 'http://localhost:5001';
     try {
       const bRes = await fetch(
@@ -181,140 +203,70 @@ export async function POST(request: Request) {
       );
       if (bRes.ok) {
         const bData = await bRes.json();
-        if (bData.messages && bData.messages.length > 0) {
-          const seen = new Set(messages.map((m) => `${m.timestamp}_${m.content}`));
-          for (const bm of bData.messages) {
-            const k = `${bm.timestamp}_${bm.content}`;
-            if (!seen.has(k)) {
-              seen.add(k);
-              messages.push({
-                group_jid: bm.groupJid,
-                sender_jid: bm.senderJid,
-                sender_name: bm.senderName,
-                content: bm.content,
-                timestamp: bm.timestamp,
-              });
-            }
+        for (const message of bData.messages || []) {
+          const timestamp = new Date(message.timestamp).toISOString();
+          if (timestamp < periodStart || timestamp > periodEnd) continue;
+          const key = `${timestamp}\u0000${message.senderName || ''}\u0000${message.content}`;
+          if (!seenMessages.has(key)) {
+            seenMessages.add(key);
+            messages.push({
+              timestamp,
+              sender_name: message.senderName || null,
+              content: message.content,
+            });
           }
         }
+      } else {
+        console.error(`Bridge message fetch failed with HTTP ${bRes.status}.`);
       }
-    } catch {}
+    } catch (error) {
+      console.error('Unable to fetch recent bridge messages for summary:', error);
+    }
 
-    // Sort messages chronologically
-    messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    messages.sort((a, b) =>
+      a.timestamp.localeCompare(b.timestamp) ||
+      (a.sender_name || '').localeCompare(b.sender_name || '')
+    );
 
     if (!messages || messages.length === 0) {
       return NextResponse.json(
         {
-          error: `No messages recorded for "${groupName || 'this group'}" in the selected timeframe (past ${hoursBack} hours). Make sure messages have been sent in the group while connected.`,
+          error: `No messages recorded for "${resolvedGroupName}" in the selected timeframe (past ${hoursBack} hours). Make sure messages have been sent in the group while connected.`,
         },
         { status: 404 }
       );
     }
 
-    // Format transcript
-    const transcript = messages
-      .map((m) => `[${new Date(m.timestamp).toLocaleTimeString()}] ${m.sender_name || 'Member'}: ${m.content}`)
-      .join('\n');
-
     const geminiApiKey = process.env.GEMINI_API_KEY;
-
-    let summaryText = '';
-    let keyPoints: any[] = [];
-    let actionItems: string[] = [];
-
-    if (geminiApiKey) {
-      try {
-        const prompt = `You are an expert AI meeting minute taker, executive assistant, and community digest specialist for student cohorts and community managers.
-Your task is to analyze the following WhatsApp group transcript for "${groupName || 'WhatsApp Group'}" and transform it into a structured, highly valuable 'Meeting Minutes & Community Digest' that can be read in 60 seconds.
-
-Pay special attention to:
-1. Executive Brief: What happened in this conversation? (2-3 sentences max).
-2. Key Topics Discussed: Categorize the discussions into concrete agenda/topics. For each topic, summarize what was discussed and list the contributors.
-3. Who Said What & Key Statements: Explicitly detail who said what! Highlight quotes, proposals, requests, banter, banking/account details shared, exams, giveaways, or stances taken by specific members.
-4. Keywords & Highlighted Terms: 4-8 distinct keyword tags discussed in the chat.
-5. Action Items & Follow-ups: Concrete next steps, requests, commitments, or reminders for members.
-
-Respond STRICTLY in valid JSON with this exact schema (no markdown code fence blocks outside the JSON):
-{
-  "overview": "Clear 2-3 sentence executive briefing of the conversation",
-  "topics_discussed": [
-    {
-      "topic": "Topic Title",
-      "summary": "Brief explanation of what happened",
-      "contributors": ["Name1", "Name2"]
+    if (!geminiApiKey) {
+      console.error('GEMINI_API_KEY is not configured; summary generation is unavailable.');
+      return NextResponse.json({ error: 'AI summaries are temporarily unavailable. Please try again later.' }, { status: 503 });
     }
-  ],
-  "who_said_what": [
-    {
-      "speaker": "Speaker Name",
-      "point": "What they said, proposed, or requested"
+
+    let generatedSummary;
+    try {
+      generatedSummary = await generateDetailedSummary(
+        messages,
+        resolvedGroupName,
+        geminiApiKey
+      );
+    } catch (error) {
+      console.error('Detailed AI summary generation failed:', error);
+      return NextResponse.json({ error: 'The AI could not complete this summary. Please try again.' }, { status: 502 });
     }
-  ],
-  "highlighted_terms": ["Term1", "Term2", "Term3"],
-  "action_items": ["Action item 1", "Action item 2"]
-}
 
-Transcript:
-${transcript.slice(0, 15000)}`;
-
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${geminiApiKey}`;
-        const aiRes = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-        });
-
-        if (!aiRes.ok) {
-          const errBody = await aiRes.text();
-          throw new Error(`Gemini API HTTP ${aiRes.status}: ${errBody}`);
-        }
-
-        const aiData = await aiRes.json();
-        const rawText = aiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        const cleanedText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
-        const parsed = JSON.parse(cleanedText);
-
-        summaryText = parsed.overview || 'Meeting minutes generated.';
-        // Store topics_discussed, who_said_what, and highlighted_terms inside key_points jsonb
-        keyPoints = [
-          {
-            topics_discussed: Array.isArray(parsed.topics_discussed) ? parsed.topics_discussed : [],
-            who_said_what: Array.isArray(parsed.who_said_what) ? parsed.who_said_what : [],
-            highlighted_terms: Array.isArray(parsed.highlighted_terms) ? parsed.highlighted_terms : [],
-          },
-        ];
-        actionItems = Array.isArray(parsed.action_items) ? parsed.action_items : [];
-      } catch (geminiError: any) {
-        console.error('Gemini API call failed, falling back to structured synthesis:', geminiError);
-        const participantNames = Array.from(new Set(messages.map((m) => m.sender_name || 'Member')));
-        summaryText = `Meeting Minutes for "${groupName || 'Group'}": ${messages.length} messages analyzed across recent discussions. Active exchanges covered operational coordination, announcements, and peer updates.`;
-        keyPoints = [
-          {
-            topics_discussed: [
-              {
-                topic: 'Group Updates & General Discussions',
-                summary: `${messages.length} messages recorded across ${participantNames.length} active group members.`,
-                contributors: participantNames.slice(0, 5),
-              },
-            ],
-            who_said_what: messages.slice(-5).map((m) => ({
-              speaker: m.sender_name || 'Member',
-              point: m.content,
-            })),
-            highlighted_terms: ['Meeting', 'Updates', 'Coordination', 'Discussion'],
-          },
-        ];
-        actionItems = [
-          'Review notes and follow up with group participants on discussed points.',
-          'Verify pending inquiries from recent messages.',
-        ];
-      }
-    } else {
-      summaryText = `Meeting Minutes for "${groupName || 'Group'}": ${messages.length} messages analyzed.`;
-      keyPoints = [];
-      actionItems = [];
-    }
+    const summaryText = generatedSummary.overview;
+    const keyPoints = [
+      {
+        topics_discussed: generatedSummary.topics_discussed,
+        who_said_what: generatedSummary.who_said_what,
+        highlighted_terms: generatedSummary.highlighted_terms,
+        decisions: generatedSummary.decisions,
+        facts_and_details: generatedSummary.facts_and_details,
+        open_questions: generatedSummary.open_questions,
+      },
+    ];
+    const actionItems = generatedSummary.action_items;
 
     // Save summary to Supabase
     const { data: savedSummary, error: saveError } = await supabase
@@ -322,7 +274,7 @@ ${transcript.slice(0, 15000)}`;
       .insert({
         user_id: user.id,
         group_jid: groupJid,
-        group_name: groupName || 'WhatsApp Group',
+        group_name: resolvedGroupName,
         summary_content: summaryText,
         summary_period_start: periodStart,
         summary_period_end: periodEnd,

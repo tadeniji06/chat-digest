@@ -13,12 +13,31 @@ import {
   Tag,
   CheckSquare,
   Check,
+  Lightbulb,
+  HelpCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { AISummary, MonitoredGroup, TopicDiscussed, SpeakerPoint } from '@/types';
 import { getUserFriendlyError } from '@/utils/errors';
 import { useSubscriptionStore } from '@/store/useSubscriptionStore';
+import ShareSummaryButton from '@/components/dashboard/ShareSummaryButton';
+
+function SummaryDetailList({ title, items, icon }: { title: string; items: string[]; icon: React.ReactNode }) {
+  if (items.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-gray-200 overflow-hidden bg-white">
+      <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-200 flex items-center gap-2">
+        {icon}
+        <h5 className="text-xs font-bold text-gray-900 uppercase tracking-wider">{title}</h5>
+      </div>
+      <ul className="p-4 space-y-2 text-xs text-gray-700">
+        {items.map((item, index) => <li key={index} className="flex items-start gap-2"><span className="text-emerald-600 font-bold">•</span><span className="leading-relaxed">{item}</span></li>)}
+      </ul>
+    </div>
+  );
+}
 
 export default function SummariesPage() {
   const [summaries, setSummaries] = useState<AISummary[]>([]);
@@ -253,6 +272,7 @@ export default function SummariesPage() {
                         <span>&bull; {summary.message_count} messages processed</span>
                       ) : null}
                     </div>
+                    <ShareSummaryButton summary={summary} />
                   </div>
                 </div>
 
@@ -276,10 +296,19 @@ export default function SummariesPage() {
                 const topics: TopicDiscussed[] = firstObj?.topics_discussed || [];
                 const whoSaidWhat: SpeakerPoint[] = firstObj?.who_said_what || [];
                 const terms: string[] = firstObj?.highlighted_terms || [];
+                const decisions: string[] = firstObj?.decisions || [];
+                const facts: string[] = firstObj?.facts_and_details || [];
+                const questions: string[] = firstObj?.open_questions || [];
                 const legacyPoints: string[] = !firstObj ? (kp.filter((p: any) => typeof p === 'string') as string[]) : [];
 
                 return (
                   <div className="space-y-4 pt-1">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <SummaryDetailList title="Decisions" items={decisions} icon={<CheckCircle className="w-4 h-4 text-emerald-700" />} />
+                      <SummaryDetailList title="Important details" items={facts} icon={<Lightbulb className="w-4 h-4 text-emerald-700" />} />
+                      <SummaryDetailList title="Open questions" items={questions} icon={<HelpCircle className="w-4 h-4 text-emerald-700" />} />
+                    </div>
+
                     {/* Highlighted Keywords / Tags Discussed */}
                     {terms.length > 0 && (
                       <div className="p-3.5 rounded-lg bg-emerald-50/40 border border-emerald-100 flex flex-wrap items-center gap-2">

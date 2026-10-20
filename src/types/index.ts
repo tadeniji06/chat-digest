@@ -144,6 +144,15 @@ export interface SpeakerPoint {
   point: string;
 }
 
+export interface SummaryKeyPoint {
+  topics_discussed?: TopicDiscussed[];
+  who_said_what?: SpeakerPoint[];
+  highlighted_terms?: string[];
+  decisions?: string[];
+  facts_and_details?: string[];
+  open_questions?: string[];
+}
+
 export interface AISummary {
   id: string;
   user_id: string;
@@ -152,11 +161,9 @@ export interface AISummary {
   summary_content: string;
   summary_period_start: string;
   summary_period_end: string;
-  key_points?: string[];
+  key_points?: Array<string | SummaryKeyPoint>;
   action_items?: string[];
-  topics_discussed?: TopicDiscussed[];
-  who_said_what?: SpeakerPoint[];
-  highlighted_terms?: string[];
+  share_token?: string | null;
   message_count?: number;
   created_at: string;
 }

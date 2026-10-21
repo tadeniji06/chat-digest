@@ -184,7 +184,10 @@ function SubscribeContent() {
                       <span>
                         {plan.hasSummaries ? (
                           <span>
-                            <strong>{plan.dailySummaries} summary/day</strong> (24h reset)
+                            <strong>
+                              {plan.unlimitedSummaries ? 'Unlimited summaries' : `${plan.dailySummaries} summaries/day`}
+                            </strong>
+                            {!plan.unlimitedSummaries && ' (24h rolling limit)'}
                           </span>
                         ) : (
                           <span className="text-gray-400">No AI summaries (Upgrade to unlock)</span>

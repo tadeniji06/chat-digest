@@ -114,7 +114,7 @@ export default function PrivacyPage() {
                   AI Meeting Minutes &amp; Summaries
                 </div>
                 <p className="text-xs text-gray-600">
-                  When you request an on-demand summary (or schedule a recurring digest), messages from the selected timeframe are formatted into a clean transcript and passed to Google Gemini via API.
+                  When you request an on-demand summary (or schedule a recurring digest), messages from the selected timeframe are formatted into a clean transcript and passed to xAI&apos;s Grok API.
                 </p>
               </div>
             </div>
@@ -163,7 +163,7 @@ export default function PrivacyPage() {
             </p>
             <ul className="list-disc pl-5 space-y-1.5 text-gray-700">
               <li><strong>Supabase:</strong> Database, authentication, and secure session management.</li>
-              <li><strong>Google Gemini AI:</strong> Enterprise LLM inference for generating structured meeting minutes and briefings.</li>
+              <li><strong>xAI:</strong> Grok AI inference for generating structured meeting minutes and briefings.</li>
               <li><strong>Flutterwave:</strong> PCI-DSS Level 1 certified payment processing gateway.</li>
               <li><strong>Vercel &amp; Render:</strong> Web hosting and background bridge socket orchestration.</li>
             </ul>

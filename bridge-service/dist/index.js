@@ -43,7 +43,7 @@ async function sendWhatsAppBotNotification(recipientPhoneOrJid, text, userFallba
             logger.info(`[Bot Notification] Sent via Official Bot to ${targetJid}`);
             return true;
         }
-        // 2. Fallback: if user session provided and connected, send direct to user
+        // 2. Fallback: if user session provided and connected, send directly to user
         if (userFallbackSession && userFallbackSession.status === 'connected' && userFallbackSession.socket) {
             await userFallbackSession.socket.sendMessage(targetJid, { text });
             logger.info(`[Bot Notification] Sent via User Connected Session to ${targetJid}`);
@@ -58,15 +58,32 @@ async function sendWhatsAppBotNotification(recipientPhoneOrJid, text, userFallba
     }
 }
 const activeSessions = new Map();
+const pendingSessionStarts = new Map();
 const logger = (0, pino_1.default)({ level: 'info' });
-// Function to start or restore Baileys connection for a user
-async function startWhatsAppSession(userId) {
-    if (activeSessions.has(userId)) {
-        const existing = activeSessions.get(userId);
-        if (existing.status === 'connected') {
-            return existing;
-        }
+function startWhatsAppSession(userId) {
+    const existing = activeSessions.get(userId);
+    if (existing &&
+        (existing.status === 'connected' ||
+            existing.status === 'connecting' ||
+            existing.status === 'qr_ready')) {
+        return Promise.resolve(existing);
     }
+    const pendingStart = pendingSessionStarts.get(userId);
+    if (pendingStart)
+        return pendingStart;
+    const start = createWhatsAppSession(userId);
+    pendingSessionStarts.set(userId, start);
+    void start.finally(() => {
+        if (pendingSessionStarts.get(userId) === start) {
+            pendingSessionStarts.delete(userId);
+        }
+    }).catch((error) => {
+        logger.error(`[${userId}] Failed to initialize WhatsApp session: ${error}`);
+    });
+    return start;
+}
+// Serialize socket creation so concurrent HTTP requests cannot open the same Signal credentials twice.
+async function createWhatsAppSession(userId) {
     const userSessionDir = path_1.default.join(SESSIONS_DIR, userId);
     const { state, saveCreds } = await (0, baileys_1.useMultiFileAuthState)(userSessionDir);
     const { version } = await (0, baileys_1.fetchLatestBaileysVersion)();

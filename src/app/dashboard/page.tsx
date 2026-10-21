@@ -265,7 +265,11 @@ export default async function DashboardPage() {
             <span className="text-xs text-gray-500">digests saved</span>
           </div>
           <p className="text-xs text-gray-500 mt-2">
-            {plan.hasSummaries ? 'Automatic daily & on-demand' : 'Requires Pro/Max plan'}
+            {plan.hasSummaries
+              ? plan.unlimitedSummaries
+                ? 'Unlimited AI summaries'
+                : `Up to ${plan.dailySummaries} AI summaries per day`
+              : 'AI summaries are not available on this plan'}
           </p>
         </div>
 

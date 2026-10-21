@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
-import { AISummary, MonitoredGroup, TopicDiscussed, SpeakerPoint } from '@/types';
+import { AISummary, MonitoredGroup, PLAN_LIMITS, TopicDiscussed, SpeakerPoint } from '@/types';
 import { getUserFriendlyError } from '@/utils/errors';
 import { useSubscriptionStore } from '@/store/useSubscriptionStore';
 import ShareSummaryButton from '@/components/dashboard/ShareSummaryButton';
@@ -142,17 +142,17 @@ export default function SummariesPage() {
       </div>
 
       {/* Generate On-Demand Summary Control Card */}
-      {tier === 'free' || isExpired ? (
+      {!PLAN_LIMITS[tier].hasSummaries ? (
         <div className="p-6 rounded-xl bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-emerald-700" />
               <h2 className="text-base font-bold text-gray-900">
-                AI Summaries &amp; Meeting Notes are a Paid Feature
+                AI Summaries are not available on this plan
               </h2>
             </div>
             <p className="text-xs text-gray-600 leading-relaxed max-w-xl">
-              AI Summaries are disabled on the Free tier. Upgrade to <strong>Basic (₦2,000/mo)</strong>, <strong>Pro (₦5,000/mo)</strong>, <strong>Max</strong>, or <strong>Enterprise</strong> to unlock automated executive briefs, key discussion points, and action items.
+              Upgrade your plan to unlock AI summaries and detailed meeting notes.
             </p>
           </div>
           <Link

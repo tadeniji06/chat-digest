@@ -11,7 +11,7 @@ ChatDigest is a full-stack SaaS application that allows users to link their What
 graph TD
   User([User / Browser]) <--> NextApp[Next.js App Router / Dashboard]
   NextApp <--> Supabase[(Supabase Database & Auth)]
-  NextApp <--> OpenAI[OpenAI API (GPT-4o-mini)]
+  NextApp <--> Grok[xAI Grok API]
   NextApp <--> Bridge[Baileys Bridge Service (Node.js)]
   Bridge <--> WhatsApp[WhatsApp Web Protocol (Multi-Device)]
   Bridge <--> Supabase
@@ -67,6 +67,8 @@ For an existing installation, run (or re-run after updates) [`supabase_summary_s
 
 ## 💻 3. Running Locally
 
+Set `GROK_API_KEY` in `.env.local` for AI summaries. In production, set the same variable in the Vercel project environment settings and redeploy.
+
 ### Start Next.js App:
 ```bash
 npm run dev
@@ -85,11 +87,13 @@ Runs at: [http://localhost:5001](http://localhost:5001)
 
 ## 💰 Subscription Gating Overview
 
-| Tier | Price | Max Groups | Features |
-|---|---|---|---|
-| **Base** | ₦1,500/mo | 1 | Real-time keyword alerts (up to 5 keywords) |
-| **Pro** | ₦5,000/mo | 3 | Keyword alerts + Daily AI bullet digests & action items |
-| **Max** | ₦10,000/mo | 10 | Keyword alerts + AI summaries + Weekly digests + Archive search |
+| Tier | Price | Max Groups | Daily AI Summaries | Features |
+|---|---:|---:|---:|---|
+| **Free** | ₦0/mo | 1 | 3 | Keyword alerts |
+| **Basic** | ₦2,000/mo | 3 | 6 | Keyword alerts + detailed summaries |
+| **Pro** | ₦5,000/mo | 6 | 10 | Keyword alerts + detailed summaries |
+| **Max** | ₦10,000/mo | 10 | 20 | Keyword alerts + summaries + weekly digests + archive search |
+| **Enterprise** | ₦25,000/mo | 20 | Unlimited | All features |
 
 ---
 

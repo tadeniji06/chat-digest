@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { SubscriptionTier, PLAN_LIMITS } from '@/types';
 import {
+  AIProviderGenerationError,
   generateDetailedSummary,
-  GeminiGenerationError,
   type SummaryMessage,
 } from '@/utils/summary-generation';
 
@@ -146,31 +146,38 @@ export async function POST(request: Request) {
     const plan = PLAN_LIMITS[tier] || PLAN_LIMITS.free;
 
     // Check summary limits:
-    if (tier === 'free' || !plan.hasSummaries || plan.dailySummaries <= 0) {
+    if (!plan.hasSummaries) {
       return NextResponse.json(
         {
           error:
-            'AI Summaries are not available on the Free plan. Please upgrade to Basic, Pro, Max, or Enterprise to generate executive group digests.',
+            'AI summaries are not available on this plan.',
         },
         { status: 403 }
       );
     }
 
     // Paid plan: check usage in last 24 hours
-    const past24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { count: dailyCount } = await supabase
-      .from('summaries')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', user.id)
-      .gte('created_at', past24h);
+    if (plan.dailySummaries !== null) {
+      const past24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { count: dailyCount, error: usageError } = await supabase
+        .from('summaries')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .gte('created_at', past24h);
 
-    if ((dailyCount || 0) >= plan.dailySummaries) {
-      return NextResponse.json(
-        {
-          error: `You have reached your limit of ${plan.dailySummaries} summary(ies) for today on the ${plan.name} plan. Your quota resets 24 hours after your last generation, or upgrade your plan for higher daily limits.`,
-        },
-        { status: 429 }
-      );
+      if (usageError) {
+        console.error('Unable to check the user summary quota:', usageError);
+        return NextResponse.json({ error: 'Unable to verify your summary limit right now.' }, { status: 500 });
+      }
+
+      if ((dailyCount || 0) >= plan.dailySummaries) {
+        return NextResponse.json(
+          {
+            error: `You have reached your limit of ${plan.dailySummaries} summaries in the last 24 hours on the ${plan.name} plan.`,
+          },
+          { status: 429 }
+        );
+      }
     }
 
     // Fetch messages from that group across selected timeframe
@@ -252,10 +259,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const geminiApiKey = process.env.GEMINI_API_KEY;
-    if (!geminiApiKey) {
-      console.error('GEMINI_API_KEY is not configured; summary generation is unavailable.');
-      return NextResponse.json({ error: 'AI summaries are temporarily unavailable. Please try again later.' }, { status: 503 });
+    const grokApiKey = process.env.GROK_API_KEY;
+    if (!grokApiKey) {
+      console.error('GROK_API_KEY is not configured; summary generation is unavailable.');
+      return NextResponse.json({ error: 'AI summaries are not configured yet. Please contact support.' }, { status: 503 });
     }
 
     let generatedSummary;
@@ -263,38 +270,38 @@ export async function POST(request: Request) {
       generatedSummary = await generateDetailedSummary(
         messages,
         resolvedGroupName,
-        geminiApiKey
+        grokApiKey
       );
     } catch (error) {
       console.error('Detailed AI summary generation failed:', error);
-      if (error instanceof GeminiGenerationError) {
+      if (error instanceof AIProviderGenerationError) {
         if (error.quotaExhausted) {
           return NextResponse.json(
-            { error: 'The AI summary quota for this API key has been used up. Please try again after the quota resets.' },
+            { error: 'The Grok API quota for this key has been used up. Please try again after the quota resets.' },
             { status: 429 }
           );
         }
         if (error.status === 429) {
           return NextResponse.json(
-            { error: 'Gemini is rate-limiting summary requests. Please wait a minute, then try again.' },
+            { error: 'Grok is rate-limiting summary requests. Please wait a minute, then try again.' },
             { status: 429 }
           );
         }
         if (error.status === 503 || error.status === 500 || error.status === 502) {
           return NextResponse.json(
-            { error: 'Gemini is temporarily unavailable. Please try your summary again in a minute.' },
+            { error: 'Grok is temporarily unavailable. Please try your summary again in a minute.' },
             { status: 503 }
           );
         }
         if (error.status === 401 || error.status === 403) {
           return NextResponse.json(
-            { error: 'The Gemini API key is invalid or does not have access to the configured model. Please contact support.' },
+            { error: 'The Grok API key is invalid or does not have access to the configured model. Please contact support.' },
             { status: 502 }
           );
         }
         if (error.status === 404) {
           return NextResponse.json(
-            { error: 'The configured Gemini model is unavailable. Please contact support.' },
+            { error: 'The configured Grok model is unavailable. Please contact support.' },
             { status: 502 }
           );
         }

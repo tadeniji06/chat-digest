@@ -25,7 +25,7 @@ export interface GeneratedSummary {
 const TRANSCRIPT_CHUNK_SIZE = 12_000;
 const NOTES_CHUNK_SIZE = 20_000;
 
-export class GeminiGenerationError extends Error {
+export class AIProviderGenerationError extends Error {
   constructor(
     message: string,
     readonly status: number,
@@ -33,7 +33,7 @@ export class GeminiGenerationError extends Error {
     readonly quotaExhausted = false
   ) {
     super(message);
-    this.name = 'GeminiGenerationError';
+    this.name = 'AIProviderGenerationError';
   }
 }
 
@@ -160,19 +160,24 @@ function parseSummary(text: string): GeneratedSummary {
   };
 }
 
-async function generateFromGemini(prompt: string, apiKey: string): Promise<GeneratedSummary> {
+async function generateFromGrok(prompt: string, apiKey: string): Promise<GeneratedSummary> {
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`,
+    'https://api.x.ai/v1/chat/completions',
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.2,
-          maxOutputTokens: 8192,
-        },
+        model: 'grok-4.7',
+        messages: [
+          { role: 'system', content: 'You produce detailed, accurate meeting notes and must return valid JSON only.' },
+          { role: 'user', content: prompt },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.2,
+        max_tokens: 8192,
       }),
     }
   );
@@ -190,32 +195,20 @@ async function generateFromGemini(prompt: string, apiKey: string): Promise<Gener
     const providerMessage =
       apiError && 'message' in apiError && typeof apiError.message === 'string'
         ? apiError.message
-        : `Gemini returned HTTP ${response.status}.`;
+        : `Grok returned HTTP ${response.status}.`;
     const statusText =
-      apiError && 'status' in apiError && typeof apiError.status === 'string'
-        ? apiError.status
+      apiError && 'code' in apiError && typeof apiError.code === 'string'
+        ? apiError.code
         : '';
-    const details =
-      apiError && 'details' in apiError && Array.isArray(apiError.details)
-        ? apiError.details
-        : [];
-    const retryInfo = details.find(
-      (detail): detail is { retryDelay: string } =>
-        detail !== null &&
-        typeof detail === 'object' &&
-        'retryDelay' in detail &&
-        typeof detail.retryDelay === 'string'
-    );
-    const retryDelaySeconds = retryInfo ? Number.parseFloat(retryInfo.retryDelay) : Number.NaN;
     const retryAfterMs = getRetryDelay(response);
     const quotaExhausted =
       response.status === 429 &&
-      (/per.?day|daily|quota.*exceed/i.test(providerMessage) ||
-        /quota/i.test(statusText));
-    throw new GeminiGenerationError(
+      (/quota exceeded|insufficient quota|billing|monthly budget|daily budget/i.test(providerMessage) ||
+        /insufficient_quota|billing|quota_exceeded/i.test(statusText));
+    throw new AIProviderGenerationError(
       providerMessage,
       response.status,
-      retryAfterMs ?? (Number.isFinite(retryDelaySeconds) ? retryDelaySeconds * 1000 : null),
+      retryAfterMs,
       quotaExhausted
     );
   }
@@ -224,30 +217,25 @@ async function generateFromGemini(prompt: string, apiKey: string): Promise<Gener
   if (
     !data ||
     typeof data !== 'object' ||
-    !('candidates' in data) ||
-    !Array.isArray(data.candidates)
+    !('choices' in data) ||
+    !Array.isArray(data.choices)
   ) {
-    throw new Error('The AI summary service returned an invalid response.');
+    throw new Error('The Grok summary service returned an invalid response.');
   }
 
-  const candidate = data.candidates[0];
-  if (!candidate || typeof candidate !== 'object' || !('content' in candidate)) {
-    throw new Error('The AI summary service returned no summary.');
+  const choice = data.choices[0];
+  if (!choice || typeof choice !== 'object' || !('message' in choice)) {
+    throw new Error('The Grok summary service returned no summary.');
   }
 
-  const content = candidate.content;
-  if (!content || typeof content !== 'object' || !('parts' in content) || !Array.isArray(content.parts)) {
-    throw new Error('The AI summary service returned no summary.');
+  const message = choice.message;
+  if (!message || typeof message !== 'object' || !('content' in message)) {
+    throw new Error('The Grok summary service returned no summary.');
   }
 
-  const parts: unknown[] = content.parts;
-  const text = parts
-    .filter((part): part is { text: string } => part !== null && typeof part === 'object' && 'text' in part && typeof part.text === 'string')
-    .map((part) => part.text)
-    .join('\n');
-
+  const text = typeof message.content === 'string' ? message.content : '';
   if (!text) {
-    throw new Error('The AI summary service returned an empty summary.');
+    throw new Error('The Grok summary service returned an empty summary.');
   }
 
   return parseSummary(text);
@@ -258,9 +246,9 @@ async function generateWithRetry(prompt: string, apiKey: string): Promise<Genera
 
   for (let attempt = 0; ; attempt += 1) {
     try {
-      return await generateFromGemini(prompt, apiKey);
+      return await generateFromGrok(prompt, apiKey);
     } catch (error) {
-      if (!(error instanceof GeminiGenerationError) || error.quotaExhausted || attempt >= maxRetries) {
+      if (!(error instanceof AIProviderGenerationError) || error.quotaExhausted || attempt >= maxRetries) {
         throw error;
       }
 
@@ -271,7 +259,7 @@ async function generateWithRetry(prompt: string, apiKey: string): Promise<Genera
       const delay = Math.max(backoff, error.retryAfterMs || 0);
       if (delay > 30_000) throw error;
 
-      console.warn(`Gemini summary request returned HTTP ${error.status}; retrying in ${delay}ms.`);
+      console.warn(`Grok summary request returned HTTP ${error.status}; retrying in ${delay}ms.`);
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }

@@ -8,7 +8,8 @@ export interface PlanFeature {
   currency: string;
   maxGroups: number;
   keywordsPerGroup: number;
-  dailySummaries: number;
+  dailySummaries: number | null;
+  unlimitedSummaries?: boolean;
   isLifetimeSummary?: boolean;
   hasSummaries: boolean;
   hasWeeklyDigest: boolean;
@@ -25,12 +26,12 @@ export const PLAN_LIMITS: Record<SubscriptionTier, PlanFeature> = {
     currency: 'NGN',
     maxGroups: 1,
     keywordsPerGroup: 2,
-    dailySummaries: 0,
+    dailySummaries: 3,
     isLifetimeSummary: false,
-    hasSummaries: false,
+    hasSummaries: true,
     hasWeeklyDigest: false,
     hasPastSearch: false,
-    description: '1 group monitoring, 2 keywords per group, and instant WhatsApp keyword alerts.',
+    description: '1 group monitoring, 2 keywords per group, 3 AI summaries per day, and instant WhatsApp keyword alerts.',
   },
   basic: {
     tier: 'basic',
@@ -40,11 +41,11 @@ export const PLAN_LIMITS: Record<SubscriptionTier, PlanFeature> = {
     currency: 'NGN',
     maxGroups: 3,
     keywordsPerGroup: 2,
-    dailySummaries: 1,
+    dailySummaries: 6,
     hasSummaries: true,
     hasWeeklyDigest: false,
     hasPastSearch: false,
-    description: '3 groups monitoring, 2 keywords per group, 1 AI summary per day (resets every 24h).',
+    description: '3 groups monitoring, 2 keywords per group, 6 AI summaries per day (resets every 24h).',
   },
   pro: {
     tier: 'pro',
@@ -54,11 +55,11 @@ export const PLAN_LIMITS: Record<SubscriptionTier, PlanFeature> = {
     currency: 'NGN',
     maxGroups: 6,
     keywordsPerGroup: 3,
-    dailySummaries: 3,
+    dailySummaries: 10,
     hasSummaries: true,
     hasWeeklyDigest: false,
     hasPastSearch: false,
-    description: '6 groups monitoring, 3 keywords per group, 3 AI summaries per day (resets every 24h).',
+    description: '6 groups monitoring, 3 keywords per group, 10 AI summaries per day (resets every 24h).',
   },
   max: {
     tier: 'max',
@@ -68,11 +69,11 @@ export const PLAN_LIMITS: Record<SubscriptionTier, PlanFeature> = {
     currency: 'NGN',
     maxGroups: 10,
     keywordsPerGroup: 4,
-    dailySummaries: 5,
+    dailySummaries: 20,
     hasSummaries: true,
     hasWeeklyDigest: true,
     hasPastSearch: true,
-    description: '10 groups monitoring, 4 keywords per group, 5 AI summaries per day (resets every 24h).',
+    description: '10 groups monitoring, 4 keywords per group, 20 AI summaries per day (resets every 24h).',
   },
   enterprise: {
     tier: 'enterprise',
@@ -82,11 +83,12 @@ export const PLAN_LIMITS: Record<SubscriptionTier, PlanFeature> = {
     currency: 'NGN',
     maxGroups: 20,
     keywordsPerGroup: 10,
-    dailySummaries: 10,
+    dailySummaries: null,
+    unlimitedSummaries: true,
     hasSummaries: true,
     hasWeeklyDigest: true,
     hasPastSearch: true,
-    description: '20 groups monitoring, 10 keywords per group, 10 AI summaries per day (resets every 24h).',
+    description: '20 groups monitoring, 10 keywords per group, unlimited AI summaries per day.',
   },
 };
 

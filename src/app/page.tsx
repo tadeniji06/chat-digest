@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/utils/supabase/server';
+import RedirectAuthenticatedUser from '@/components/RedirectAuthenticatedUser';
 import {
   ArrowRight,
   ShieldCheck,
@@ -28,26 +28,6 @@ export default async function LandingPage({
     redirect(`/auth/callback?code=${encodeURIComponent(code)}`);
   }
 
-  let isAuthenticated = false;
-  try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser();
-
-    if (error) {
-      console.error('Unable to verify the landing-page session:', error);
-    } else {
-      isAuthenticated = Boolean(user);
-    }
-  } catch (error) {
-    console.error('Unable to verify the landing-page session:', error);
-  }
-
-  if (isAuthenticated) {
-    redirect('/dashboard');
-  }
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
@@ -72,6 +52,7 @@ export default async function LandingPage({
 
   return (
     <div className="min-h-screen bg-white text-gray-900 selection:bg-emerald-600 selection:text-white">
+      <RedirectAuthenticatedUser />
       {/* JSON-LD Structured Data for Search Engines */}
       <script
         type="application/ld+json"
@@ -260,7 +241,12 @@ export default async function LandingPage({
                           <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                           <span>
                             {plan.hasSummaries ? (
-                              <span><strong>{plan.dailySummaries} summary/day</strong> (24h reset)</span>
+                              <span>
+                                <strong>
+                                  {plan.unlimitedSummaries ? 'Unlimited summaries' : `${plan.dailySummaries} summaries/day`}
+                                </strong>
+                                {!plan.unlimitedSummaries && ' (24h rolling limit)'}
+                              </span>
                             ) : (
                               <span className="text-gray-400">No AI summaries (Upgrade to unlock)</span>
                             )}

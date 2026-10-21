@@ -66,6 +66,15 @@ export function getUserFriendlyError(err: unknown, defaultMessage = 'Something w
 
   // AI provider availability, quota, and configuration
   if (
+    lower.includes('quota') &&
+    (lower.includes('used up') ||
+      lower.includes('exhausted') ||
+      lower.includes('budget') ||
+      lower.includes('reset'))
+  ) {
+    return 'The Grok API quota for this key has been used up. Please try again after the quota resets.';
+  }
+  if (
     lower.includes('resource exhausted') ||
     lower.includes('quota exceeded') ||
     lower.includes('rate limit') ||
@@ -92,7 +101,7 @@ export function getUserFriendlyError(err: unknown, defaultMessage = 'Something w
   ) {
     return 'The AI service configuration needs attention. Please contact support.';
   }
-  if (lower.includes('gemini') || lower.includes('model')) {
+  if (lower.includes('grok') || lower.includes('model')) {
     return 'The AI service could not complete this summary. Please try again; if it keeps happening, contact support.';
   }
 

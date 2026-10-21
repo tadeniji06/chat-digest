@@ -375,28 +375,28 @@ async function startWhatsAppSession(userId: string): Promise<ActiveSession> {
             let tierName = 'Free';
             let maxGroups = 1;
             let keywordsCount = 2;
-            let summaryInfo = 'Disabled on Free (Upgrade to unlock)';
+            let summaryInfo = '3 AI summaries per day';
 
             if (resolvedTier === 'basic') {
               tierName = 'Basic (₦2,000/mo)';
               maxGroups = 3;
               keywordsCount = 2;
-              summaryInfo = '1 AI summary per day';
+              summaryInfo = '6 AI summaries per day';
             } else if (resolvedTier === 'pro') {
               tierName = 'Pro (₦5,000/mo)';
               maxGroups = 6;
               keywordsCount = 3;
-              summaryInfo = '3 AI summaries per day';
+              summaryInfo = '10 AI summaries per day';
             } else if (resolvedTier === 'max') {
               tierName = 'Max (₦10,000/mo)';
               maxGroups = 10;
               keywordsCount = 4;
-              summaryInfo = '5 AI summaries per day';
+              summaryInfo = '20 AI summaries per day';
             } else if (resolvedTier === 'enterprise') {
-              tierName = 'Enterprise (₦50,000/mo)';
+              tierName = 'Enterprise (₦25,000/mo)';
               maxGroups = 20;
               keywordsCount = 10;
-              summaryInfo = '10 AI summaries per day';
+              summaryInfo = 'Unlimited AI summaries per day';
             }
 
             const welcomeText = 

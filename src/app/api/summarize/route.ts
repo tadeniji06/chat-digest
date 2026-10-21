@@ -275,6 +275,13 @@ export async function POST(request: Request) {
     } catch (error) {
       console.error('Detailed AI summary generation failed:', error);
       if (error instanceof AIProviderGenerationError) {
+        if (error.status === 400) {
+          console.error('Grok rejected the summary request:', {
+            status: error.status,
+            code: error.providerCode,
+            message: error.message.slice(0, 500),
+          });
+        }
         if (error.billingRequired) {
           return NextResponse.json(
             { error: 'Grok API billing is not active or this account needs API credits. Add credits in the xAI developer console; a Grok Plus subscription does not pay API usage.' },

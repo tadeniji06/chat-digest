@@ -31,7 +31,8 @@ export class AIProviderGenerationError extends Error {
     readonly status: number,
     readonly retryAfterMs: number | null = null,
     readonly quotaExhausted = false,
-    readonly billingRequired = false
+    readonly billingRequired = false,
+    readonly providerCode: string | null = null
   ) {
     super(message);
     this.name = 'AIProviderGenerationError';
@@ -191,37 +192,45 @@ async function generateFromGrok(prompt: string, apiKey: string): Promise<Generat
 
   if (!response.ok) {
     const errorBody: unknown = await response.json().catch(() => null);
-    const apiError =
-      errorBody &&
-      typeof errorBody === 'object' &&
-      'error' in errorBody &&
-      errorBody.error &&
-      typeof errorBody.error === 'object'
-        ? errorBody.error
+    const errorRecord =
+      errorBody && typeof errorBody === 'object'
+        ? (errorBody as Record<string, unknown>)
         : null;
-    const providerMessage =
-      apiError && 'message' in apiError && typeof apiError.message === 'string'
-        ? apiError.message
-        : `Grok returned HTTP ${response.status}.`;
-    const statusText =
-      apiError && 'code' in apiError && typeof apiError.code === 'string'
-        ? apiError.code
-        : '';
+    const nestedError =
+      errorRecord?.error && typeof errorRecord.error === 'object'
+        ? (errorRecord.error as Record<string, unknown>)
+        : null;
+    const providerMessage = [
+      nestedError?.message,
+      nestedError?.detail,
+      typeof errorRecord?.error === 'string' ? errorRecord.error : null,
+      errorRecord?.message,
+      errorRecord?.detail,
+    ].find((value): value is string => typeof value === 'string' && value.length > 0)
+      ?? `Grok returned HTTP ${response.status}.`;
+    const providerCode = [
+      nestedError?.code,
+      nestedError?.type,
+      errorRecord?.code,
+      errorRecord?.type,
+    ].find((value): value is string => typeof value === 'string' && value.length > 0)
+      ?? null;
     const retryAfterMs = getRetryDelay(response);
     const quotaExhausted =
       response.status === 429 &&
       (/quota exceeded|insufficient quota|billing|monthly budget|daily budget/i.test(providerMessage) ||
-        /insufficient_quota|billing|quota_exceeded/i.test(statusText));
+        /insufficient_quota|billing|quota_exceeded/i.test(providerCode || ''));
     const billingRequired =
       response.status === 402 ||
       /insufficient credits|no credits|credit balance|payment required|billing required/i.test(providerMessage) ||
-      /insufficient_credits|payment_required|billing_required/i.test(statusText);
+      /insufficient_credits|payment_required|billing_required/i.test(providerCode || '');
     throw new AIProviderGenerationError(
       providerMessage,
       response.status,
       retryAfterMs,
       quotaExhausted,
-      billingRequired
+      billingRequired,
+      providerCode
     );
   }
 

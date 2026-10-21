@@ -22,8 +22,10 @@ export interface GeneratedSummary {
   action_items: string[];
 }
 
-const TRANSCRIPT_CHUNK_SIZE = 12_000;
-const NOTES_CHUNK_SIZE = 20_000;
+const TRANSCRIPT_CHUNK_SIZE = 36_000;
+const NOTES_CHUNK_SIZE = 40_000;
+const MAX_GENERATION_TIME_MS = 240_000;
+const MAX_PROVIDER_REQUEST_TIME_MS = 50_000;
 
 export class AIProviderGenerationError extends Error {
   constructor(
@@ -79,12 +81,19 @@ function splitIntoChunks<T>(items: T[], getText: (item: T) => string, maxChars: 
 
 async function generateInBatches<T>(
   items: T[],
-  generate: (item: T, index: number) => Promise<GeneratedSummary>
+  generate: (item: T, index: number) => Promise<GeneratedSummary>,
+  deadline: number
 ): Promise<GeneratedSummary[]> {
   const results: GeneratedSummary[] = [];
-  const concurrency = 1;
+  const concurrency = 3;
 
   for (let offset = 0; offset < items.length; offset += concurrency) {
+    if (Date.now() >= deadline) {
+      throw new AIProviderGenerationError(
+        'Summary generation exceeded its time budget. Please choose a shorter timeframe and try again.',
+        504
+      );
+    }
     const batch = items.slice(offset, offset + concurrency);
     results.push(
       ...(await Promise.all(batch.map((item, index) => generate(item, offset + index))))
@@ -162,9 +171,20 @@ function parseSummary(text: string): GeneratedSummary {
   };
 }
 
-async function generateFromGrok(prompt: string, apiKey: string): Promise<GeneratedSummary> {
+async function generateFromGrok(
+  prompt: string,
+  apiKey: string,
+  deadline: number
+): Promise<GeneratedSummary> {
   let response: Response;
   try {
+    const remainingTime = deadline - Date.now();
+    if (remainingTime <= 0) {
+      throw new AIProviderGenerationError(
+        'Summary generation exceeded its time budget. Please choose a shorter timeframe and try again.',
+        504
+      );
+    }
     response = await fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -178,11 +198,20 @@ async function generateFromGrok(prompt: string, apiKey: string): Promise<Generat
           { role: 'user', content: prompt },
         ],
         response_format: { type: 'json_object' },
+        reasoning_effort: 'low',
         temperature: 0.2,
         max_completion_tokens: 8192,
       }),
+      signal: AbortSignal.timeout(Math.min(MAX_PROVIDER_REQUEST_TIME_MS, remainingTime)),
     });
   } catch (error) {
+    if (error instanceof AIProviderGenerationError) throw error;
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      throw new AIProviderGenerationError(
+        'Grok took too long to process a part of this summary. Please choose a shorter timeframe and try again.',
+        504
+      );
+    }
     const message = error instanceof Error ? error.message : 'Network request failed.';
     throw new AIProviderGenerationError(
       `Unable to reach Grok: ${message}`,
@@ -288,14 +317,23 @@ async function generateFromGrok(prompt: string, apiKey: string): Promise<Generat
   }
 }
 
-async function generateWithRetry(prompt: string, apiKey: string): Promise<GeneratedSummary> {
-  const maxRetries = 2;
+async function generateWithRetry(
+  prompt: string,
+  apiKey: string,
+  deadline: number
+): Promise<GeneratedSummary> {
+  const maxRetries = 1;
 
   for (let attempt = 0; ; attempt += 1) {
     try {
-      return await generateFromGrok(prompt, apiKey);
+      return await generateFromGrok(prompt, apiKey, deadline);
     } catch (error) {
-      if (!(error instanceof AIProviderGenerationError) || error.quotaExhausted || attempt >= maxRetries) {
+      if (
+        !(error instanceof AIProviderGenerationError) ||
+        error.quotaExhausted ||
+        attempt >= maxRetries ||
+        Date.now() >= deadline
+      ) {
         throw error;
       }
 
@@ -304,7 +342,7 @@ async function generateWithRetry(prompt: string, apiKey: string): Promise<Genera
 
       const backoff = Math.min(2000 * 2 ** attempt, 8000);
       const delay = Math.max(backoff, error.retryAfterMs || 0);
-      if (delay > 30_000) throw error;
+      if (delay > 30_000 || Date.now() + delay + 5_000 >= deadline) throw error;
 
       console.warn(`Grok summary request returned HTTP ${error.status}; retrying in ${delay}ms.`);
       await new Promise((resolve) => setTimeout(resolve, delay));
@@ -317,13 +355,14 @@ export async function generateDetailedSummary(
   groupName: string,
   apiKey: string
 ): Promise<GeneratedSummary> {
+  const deadline = Date.now() + MAX_GENERATION_TIME_MS;
   const transcriptChunks = splitIntoChunks(messages, formatMessage, TRANSCRIPT_CHUNK_SIZE);
   let notes = await generateInBatches(transcriptChunks, (chunk, index) => {
     const transcript = chunk.map(formatMessage).join('\n');
     const instruction =
       `This is transcript segment ${index + 1} of ${transcriptChunks.length}. Analyze every message in this segment. Preserve each distinct substantive update and its details in the JSON fields.`;
-    return generateWithRetry(createPrompt(transcript, groupName, instruction), apiKey);
-  });
+    return generateWithRetry(createPrompt(transcript, groupName, instruction), apiKey, deadline);
+  }, deadline);
 
   while (notes.length > 1) {
     const noteChunks = splitIntoChunks(
@@ -339,9 +378,10 @@ export async function generateDetailedSummary(
         `Combine these ordered segment notes without dropping any distinct factual detail, decision, question, speaker attribution, or action. This is consolidation pass ${index + 1}; retain details even when the result is long.`;
       return generateWithRetry(
         createPrompt(JSON.stringify(chunk), groupName, instruction),
-        apiKey
+        apiKey,
+        deadline
       );
-    });
+    }, deadline);
   }
 
   return notes[0];

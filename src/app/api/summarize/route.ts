@@ -318,6 +318,12 @@ export async function POST(request: Request) {
             { status: 503 }
           );
         }
+        if (error.status === 504) {
+          return NextResponse.json(
+            { error: 'This summary is taking too long to generate. Please choose a shorter timeframe and try again.' },
+            { status: 504 }
+          );
+        }
         if (error.status === 401 || error.status === 403) {
           return NextResponse.json(
             { error: 'The Grok API key is invalid or does not have access to the configured model. Please contact support.' },

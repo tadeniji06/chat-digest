@@ -68,6 +68,9 @@ export function getUserFriendlyError(err: unknown, defaultMessage = 'Something w
   if (lower.includes('no messages recorded') || lower.includes('no messages found')) {
     return 'No messages were found for this group and time period. Check that WhatsApp is connected and saving messages, or choose a longer timeframe.';
   }
+  if (lower.includes('taking too long') || lower.includes('time budget') || lower.includes('took too long')) {
+    return 'This summary is taking too long to generate. Try a shorter timeframe, such as 12 or 24 hours.';
+  }
   if (
     (lower.includes('api credits') || lower.includes('billing is not active')) &&
     (lower.includes('grok') || lower.includes('xai') || lower.includes('x.ai'))

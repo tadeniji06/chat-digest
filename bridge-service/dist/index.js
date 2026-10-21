@@ -58,32 +58,15 @@ async function sendWhatsAppBotNotification(recipientPhoneOrJid, text, userFallba
     }
 }
 const activeSessions = new Map();
-const pendingSessionStarts = new Map();
 const logger = (0, pino_1.default)({ level: 'info' });
-function startWhatsAppSession(userId) {
-    const existing = activeSessions.get(userId);
-    if (existing &&
-        (existing.status === 'connected' ||
-            existing.status === 'connecting' ||
-            existing.status === 'qr_ready')) {
-        return Promise.resolve(existing);
-    }
-    const pendingStart = pendingSessionStarts.get(userId);
-    if (pendingStart)
-        return pendingStart;
-    const start = createWhatsAppSession(userId);
-    pendingSessionStarts.set(userId, start);
-    void start.finally(() => {
-        if (pendingSessionStarts.get(userId) === start) {
-            pendingSessionStarts.delete(userId);
+// Function to start or restore Baileys connection for a user
+async function startWhatsAppSession(userId) {
+    if (activeSessions.has(userId)) {
+        const existing = activeSessions.get(userId);
+        if (existing.status === 'connected') {
+            return existing;
         }
-    }).catch((error) => {
-        logger.error(`[${userId}] Failed to initialize WhatsApp session: ${error}`);
-    });
-    return start;
-}
-// Serialize socket creation so concurrent HTTP requests cannot open the same Signal credentials twice.
-async function createWhatsAppSession(userId) {
+    }
     const userSessionDir = path_1.default.join(SESSIONS_DIR, userId);
     const { state, saveCreds } = await (0, baileys_1.useMultiFileAuthState)(userSessionDir);
     const { version } = await (0, baileys_1.fetchLatestBaileysVersion)();
@@ -314,30 +297,30 @@ async function createWhatsAppSession(userId) {
                         let tierName = 'Free';
                         let maxGroups = 1;
                         let keywordsCount = 2;
-                        let summaryInfo = 'Disabled on Free (Upgrade to unlock)';
+                        let summaryInfo = '3 AI summaries per day';
                         if (resolvedTier === 'basic') {
                             tierName = 'Basic (₦2,000/mo)';
                             maxGroups = 3;
                             keywordsCount = 2;
-                            summaryInfo = '1 AI summary per day';
+                            summaryInfo = '6 AI summaries per day';
                         }
                         else if (resolvedTier === 'pro') {
                             tierName = 'Pro (₦5,000/mo)';
                             maxGroups = 6;
                             keywordsCount = 3;
-                            summaryInfo = '3 AI summaries per day';
+                            summaryInfo = '10 AI summaries per day';
                         }
                         else if (resolvedTier === 'max') {
                             tierName = 'Max (₦10,000/mo)';
                             maxGroups = 10;
                             keywordsCount = 4;
-                            summaryInfo = '5 AI summaries per day';
+                            summaryInfo = '20 AI summaries per day';
                         }
                         else if (resolvedTier === 'enterprise') {
-                            tierName = 'Enterprise (₦50,000/mo)';
+                            tierName = 'Enterprise (₦25,000/mo)';
                             maxGroups = 20;
                             keywordsCount = 10;
-                            summaryInfo = '10 AI summaries per day';
+                            summaryInfo = 'Unlimited AI summaries per day';
                         }
                         const welcomeText = `👋 *Welcome to ChatDigest!*
 

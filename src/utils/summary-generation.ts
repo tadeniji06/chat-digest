@@ -30,7 +30,8 @@ export class AIProviderGenerationError extends Error {
     message: string,
     readonly status: number,
     readonly retryAfterMs: number | null = null,
-    readonly quotaExhausted = false
+    readonly quotaExhausted = false,
+    readonly billingRequired = false
   ) {
     super(message);
     this.name = 'AIProviderGenerationError';
@@ -211,11 +212,16 @@ async function generateFromGrok(prompt: string, apiKey: string): Promise<Generat
       response.status === 429 &&
       (/quota exceeded|insufficient quota|billing|monthly budget|daily budget/i.test(providerMessage) ||
         /insufficient_quota|billing|quota_exceeded/i.test(statusText));
+    const billingRequired =
+      response.status === 402 ||
+      /insufficient credits|no credits|credit balance|payment required|billing required/i.test(providerMessage) ||
+      /insufficient_credits|payment_required|billing_required/i.test(statusText);
     throw new AIProviderGenerationError(
       providerMessage,
       response.status,
       retryAfterMs,
-      quotaExhausted
+      quotaExhausted,
+      billingRequired
     );
   }
 

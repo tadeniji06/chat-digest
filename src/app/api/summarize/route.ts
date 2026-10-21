@@ -275,6 +275,12 @@ export async function POST(request: Request) {
     } catch (error) {
       console.error('Detailed AI summary generation failed:', error);
       if (error instanceof AIProviderGenerationError) {
+        if (error.billingRequired) {
+          return NextResponse.json(
+            { error: 'Grok API billing is not active or this account needs API credits. Add credits in the xAI developer console; a Grok Plus subscription does not pay API usage.' },
+            { status: 402 }
+          );
+        }
         if (error.quotaExhausted) {
           return NextResponse.json(
             { error: 'The Grok API quota for this key has been used up. Please try again after the quota resets.' },

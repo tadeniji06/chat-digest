@@ -66,6 +66,12 @@ export function getUserFriendlyError(err: unknown, defaultMessage = 'Something w
 
   // AI provider availability, quota, and configuration
   if (
+    (lower.includes('api credits') || lower.includes('billing is not active')) &&
+    (lower.includes('grok') || lower.includes('xai') || lower.includes('x.ai'))
+  ) {
+    return 'Summary generation needs active xAI API billing or API credits. Add credits in the xAI developer console; a Grok Plus subscription does not cover API usage.';
+  }
+  if (
     lower.includes('quota') &&
     (lower.includes('used up') ||
       lower.includes('exhausted') ||

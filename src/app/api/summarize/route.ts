@@ -281,6 +281,18 @@ export async function POST(request: Request) {
             code: error.providerCode,
             message: error.message.slice(0, 500),
           });
+          return NextResponse.json(
+            {
+              error: 'Grok rejected the summary request. Please try again, and contact support if this continues.',
+              diagnostic: {
+                provider: 'xAI',
+                status: error.status,
+                code: error.providerCode,
+                message: error.message.slice(0, 500),
+              },
+            },
+            { status: 502 }
+          );
         }
         if (error.billingRequired) {
           return NextResponse.json(

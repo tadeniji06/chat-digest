@@ -106,6 +106,12 @@ export default function SummariesPage() {
 
       const data = await res.json();
       if (!res.ok) {
+        console.error('[AI summary] Request failed:', {
+          status: res.status,
+          statusText: res.statusText,
+          error: data.error,
+          diagnostic: data.diagnostic,
+        });
         toast.error(getUserFriendlyError(data.error, 'Unable to generate summary right now. Please try again in a few moments.'));
         return;
       }
@@ -113,6 +119,7 @@ export default function SummariesPage() {
       toast.success(`Generated executive summary for "${groupName}"`);
       setSummaries((prev) => [data.summary, ...prev]);
     } catch (err: unknown) {
+      console.error('[AI summary] Request could not be completed:', err);
       toast.error(getUserFriendlyError(err, 'Summary generation is taking longer than usual. Please try again shortly.'));
     } finally {
       setGenerating(false);

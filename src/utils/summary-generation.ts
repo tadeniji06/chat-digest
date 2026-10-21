@@ -161,9 +161,9 @@ function parseSummary(text: string): GeneratedSummary {
 }
 
 async function generateFromGrok(prompt: string, apiKey: string): Promise<GeneratedSummary> {
-  const response = await fetch(
-    'https://api.x.ai/v1/chat/completions',
-    {
+  let response: Response;
+  try {
+    response = await fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -177,10 +177,16 @@ async function generateFromGrok(prompt: string, apiKey: string): Promise<Generat
         ],
         response_format: { type: 'json_object' },
         temperature: 0.2,
-        max_tokens: 8192,
+        max_completion_tokens: 8192,
       }),
-    }
-  );
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Network request failed.';
+    throw new AIProviderGenerationError(
+      `Unable to reach Grok: ${message}`,
+      503
+    );
+  }
 
   if (!response.ok) {
     const errorBody: unknown = await response.json().catch(() => null);
@@ -213,7 +219,16 @@ async function generateFromGrok(prompt: string, apiKey: string): Promise<Generat
     );
   }
 
-  const data: unknown = await response.json();
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    throw new AIProviderGenerationError(
+      'Grok returned a response that could not be read.',
+      502
+    );
+  }
+
   if (
     !data ||
     typeof data !== 'object' ||
@@ -228,6 +243,13 @@ async function generateFromGrok(prompt: string, apiKey: string): Promise<Generat
     throw new Error('The Grok summary service returned no summary.');
   }
 
+  if ('finish_reason' in choice && choice.finish_reason === 'length') {
+    throw new AIProviderGenerationError(
+      'Grok reached the summary output limit before completing its response.',
+      502
+    );
+  }
+
   const message = choice.message;
   if (!message || typeof message !== 'object' || !('content' in message)) {
     throw new Error('The Grok summary service returned no summary.');
@@ -238,7 +260,17 @@ async function generateFromGrok(prompt: string, apiKey: string): Promise<Generat
     throw new Error('The Grok summary service returned an empty summary.');
   }
 
-  return parseSummary(text);
+  try {
+    return parseSummary(text);
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new AIProviderGenerationError(
+        'Grok returned malformed JSON for the summary.',
+        502
+      );
+    }
+    throw error;
+  }
 }
 
 async function generateWithRetry(prompt: string, apiKey: string): Promise<GeneratedSummary> {

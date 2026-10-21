@@ -305,6 +305,12 @@ export async function POST(request: Request) {
             { status: 502 }
           );
         }
+        if (error.status === 400 || error.status === 422) {
+          return NextResponse.json(
+            { error: 'Grok rejected the summary request. Please try again, and contact support if this continues.' },
+            { status: 502 }
+          );
+        }
       }
       return NextResponse.json({ error: 'The AI could not complete this summary. Please try again.' }, { status: 502 });
     }

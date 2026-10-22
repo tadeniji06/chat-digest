@@ -7,6 +7,8 @@ import {
   type SummaryMessage,
 } from '@/utils/summary-generation';
 
+export const maxDuration = 240;
+
 interface FlutterwaveTransaction {
   status?: string;
   created_at: string;

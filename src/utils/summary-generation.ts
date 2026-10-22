@@ -22,10 +22,10 @@ export interface GeneratedSummary {
   action_items: string[];
 }
 
-const TRANSCRIPT_CHUNK_SIZE = 36_000;
-const NOTES_CHUNK_SIZE = 40_000;
-const MAX_GENERATION_TIME_MS = 240_000;
-const MAX_PROVIDER_REQUEST_TIME_MS = 50_000;
+const TRANSCRIPT_CHUNK_SIZE = 18_000;
+const NOTES_CHUNK_SIZE = 30_000;
+const MAX_GENERATION_TIME_MS = 180_000;
+const MAX_PROVIDER_REQUEST_TIME_MS = 35_000;
 
 export class AIProviderGenerationError extends Error {
   constructor(
@@ -204,13 +204,13 @@ async function generateFromGrok(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'grok-4.7',
+        model: 'grok-4.3',
         messages: [
           { role: 'system', content: 'You produce detailed, accurate meeting notes and must return valid JSON only.' },
           { role: 'user', content: prompt },
         ],
         response_format: { type: 'json_object' },
-        reasoning_effort: 'low',
+        reasoning_effort: 'none',
         temperature: 0.2,
         max_completion_tokens: 8192,
       }),

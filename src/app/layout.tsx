@@ -100,13 +100,26 @@ export const metadata: Metadata = {
 import Script from "next/script";
 import { Toaster } from "@/components/ui/Toaster";
 import CookieConsentBanner from "@/components/CookieConsentBanner";
-import { Barlow_Condensed } from "next/font/google";
+import { Manrope, Quantico, Shadows_Into_Light } from "next/font/google";
 
-const barlowCondensed = Barlow_Condensed({
+const manrope = Manrope({
   subsets: ["latin"],
-  weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
+  variable: "--font-manrope",
+  display: "swap",
+});
+
+const quantico = Quantico({
+  subsets: ["latin"],
+  weight: ["400", "700"],
   style: ["normal", "italic"],
-  variable: "--font-barlow-condensed",
+  variable: "--font-quantico",
+  display: "swap",
+});
+
+const shadowsIntoLight = Shadows_Into_Light({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-shadows-into-light",
   display: "swap",
 });
 
@@ -116,11 +129,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={barlowCondensed.variable}>
+    <html
+      lang="en"
+      className={`${manrope.variable} ${quantico.variable} ${shadowsIntoLight.variable}`}
+    >
       <head>
         <link rel="icon" href="/favico.png" type="image/png" />
       </head>
-      <body className={`${barlowCondensed.className} antialiased min-h-screen bg-slate-50 text-slate-900`}>
+      <body className="antialiased min-h-screen bg-slate-50 text-slate-900">
         {/* Microsoft Clarity Analytics */}
         <Script id="microsoft-clarity" strategy="afterInteractive">
           {`

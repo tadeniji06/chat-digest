@@ -291,7 +291,7 @@ export default function SummariesPage() {
 
               {/* Executive Overview */}
               <div>
-                <p className="text-sm text-gray-800 leading-relaxed bg-gray-50/70 p-4 rounded-lg border border-gray-200">
+                <p className="whitespace-pre-wrap text-sm text-gray-800 leading-relaxed bg-gray-50/70 p-4 rounded-lg border border-gray-200">
                   {summary.summary_content}
                 </p>
               </div>
